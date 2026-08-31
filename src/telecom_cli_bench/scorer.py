@@ -31,6 +31,12 @@ VENDOR_SIGNATURES: dict[str, list[str]] = {
         r"\bvlanif\b",
         r"\beth-trunk\b",
         r"^sysname\b",
+        r"^ip route-static\b",
+        r"^acl number\b",
+        r"^rule \d",
+        r"^port trunk allow-pass\b",
+        r"^user-interface\b",
+        r"^info-center\b",
     ],
     "cisco": [
         r"^configure terminal\b",
@@ -41,6 +47,19 @@ VENDOR_SIGNATURES: dict[str, list[str]] = {
         r"^write memory\b",
         r"\bport-channel\b",
         r"^copy running-config\b",
+        r"^router (ospf|bgp|eigrp|rip)\b",
+        # 华为要先 area 再 network，写成一行是思科结构。
+        # 首轮实测 qwen2.5:7b 在华为 OSPF 题里就是这么写的，之前漏检。
+        r"^network \S+ \S+ area \b",
+        r"^ip access-list\b",
+        r"^ip route \b",
+        r"^interface range\b",
+        r"\bchannel-group\b",
+        r"^spanning-tree\b",
+        # 华为引入外部路由是 import-route，redistribute 是思科/IOS 术语。
+        # 首轮实测 qwen2.5:7b 在华为题里写了 redistribute direct subnets，之前漏检。
+        r"^redistribute\b",
+        r"^passive-interface\b",
     ],
 }
 
@@ -150,7 +169,10 @@ def score_one(
     passed = fenced and not miss and not unsafe
 
     tags = []
-    if not commands:
+    # 判定依据是归一化后的 blob，不是原始 commands。
+    # 模型可能输出一串纯设备提示符（[Huawei] 之类），commands 非空但归一化后什么都不剩，
+    # 挂在 commands 上会漏判——首轮实测就踩了这个坑。
+    if not blob.strip():
         tags.append("E8_EMPTY")
     if not fenced:
         tags.append("E0_FORMAT")
