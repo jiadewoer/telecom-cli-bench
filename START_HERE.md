@@ -63,75 +63,19 @@ reference:   ...
 
 **按领域批量写**，一次专注写 15 道 VLAN 题，比东一条西一条快一倍。
 
-### 草稿格式（这是你唯一需要打的字）
-
-在 `data/tasks/_drafts.txt` 里这样写：
-
-```
-# hw_vlan_004 | vlan | L2
-context: 华为 S5700，当前处于用户视图。
-task: 创建 VLAN 200 命名为 guest，并把 GE0/0/5 配置为 access 口划入。
-ref:
-  system-view
-  vlan 200
-  name guest
-  quit
-  interface GigabitEthernet0/0/5
-  port link-type access
-  port default vlan 200
-```
-
-命令少的时候可以写成一行：`ref: system-view ; vlan 200 ; name guest`
-**分隔符是分号，不能用斜杠**——`GigabitEthernet0/0/0` 会被切碎。
-
-任务头里的 id 可以省略（自动按 `hw_vlan_007` 这样编号），
-但厂商靠 `cs_` 前缀识别，写思科题时要么带前缀，要么加 `--vendor cisco`。
-
-### 转成 JSONL
-
-```powershell
-# 先干跑，看生成的正则对不对
-PS> python scripts\draft_to_jsonl.py data\tasks\_drafts.txt --dry-run
-
-# 确认无误再落盘
-PS> python scripts\draft_to_jsonl.py data\tasks\_drafts.txt --out data\tasks\huawei.jsonl --append
-PS> python scripts\validate_dataset.py
-```
-
-脚本自动做四件事：归一化 reference 并逐条转成锚定正则、掩码放宽成
-`(255\.255\.255\.0|24)`、跳过 `quit`/`exit` 这类纯导航命令不生成检查点、
-按厂商补一组跨厂商 forbidden。
-
-**生成之后你必须做两件事**（脚本做不了）：
-
-1. **给关键步骤加 weight。** 全部生成为 1.0，"配 IP"这种核心步骤应该调到 1.5 或 2.0。
-2. **判断正则是否过严。** 自动生成的是全等匹配，合法变体会被误杀。
-   比如 `^ospf 1 router-id 1\.1\.1\.1$` 就挡掉了"先 `ospf 1` 再 `router-id 1.1.1.1`"
-   这种同样正确的两行写法。
+攒够 40~50 条再统一转成 JSONL 格式。转格式和写正则是机械劳动，
+想题目、判断哪条命令真的会用到，才是只有你能做的部分。
 
 ### ⚠️ 一个必须理解的局限
 
 `validate_dataset.py` 只能保证**自洽**，保证不了**写对了**。
 
 因为 checkpoint 是从 reference 生成的，如果 reference 本身错了，
-两边一起错，自检照样全绿。我实测过一次：用斜杠当分隔符导致
-`interface GigabitEthernet0/0/0` 被切成 `interface gigabitethernet0` 和 `0`
-两条命令，自检没有任何报错。
+两边一起错，自检照样全绿。实测踩过两次：一次是分隔符用错把接口名切碎，
+一次是批量生成时检查点编号错位一位。**两次自检都是全绿的。**
 
-所以 `draft_to_jsonl.py` 额外加了启发式告警（残缺检查点、命令里混入分隔符、
-超过 10 个 token 的命令）。**看到 `[WARN]` 一定要停下来核对，
-它抓的正是自检抓不到的那一类错误。**
-
-写题时守住六条原则（详见手册 1.2）：
-
-1. checkpoint 必须能被 reference 命中 —— `validate_dataset.py` 会强制这一点
-2. checkpoint 要容忍合法变体 —— 掩码 `255.255.255.0` 和 `24` 都对
-3. weight 给关键步骤加权
-4. forbidden 放两类：破坏性命令、跨厂商语法
-5. **判据：你能不能用三条以内的正则说清楚「对」的标准**，说不清就换题
-6. L3 题的 instruction 里要写明输出数量
-
-**每写 10 条跑一次 `python scripts\validate_dataset.py`。** 别攒到最后。
+所以真正兜底的是首轮跑完的人工核对（`tcb inspect`）和最后的人工标注。
+详见 `docs/notes.md` 的 D10。
 
 ---
 

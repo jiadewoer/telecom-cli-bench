@@ -2,7 +2,9 @@
 # 中断了不要紧：原始输出按组合分文件存，已完成的文件还在，
 # 重跑时下面的 if 会自动跳过已有结果。
 
-$models = (Get-Content configs\models.json -Raw -Encoding UTF8 | ConvertFrom-Json).model
+# PowerShell 5.1 的 Get-Content 默认按系统 ANSI（中文机器上是 GBK）读文件，
+# 读 UTF-8 的 models.json 会乱码并导致 ConvertFrom-Json 解析失败。必须显式指定编码。
+$models  = (Get-Content configs\models.json -Raw -Encoding UTF8 | ConvertFrom-Json).model
 $prompts = @("zero_shot", "few_shot", "syntax_hint")
 $t0 = Get-Date
 
