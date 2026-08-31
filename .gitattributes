@@ -1,0 +1,15 @@
+# 全仓库统一用 LF。
+#
+# 起因：core.autocrlf 在 Windows 上默认为 true，git pull 会把文件以 CRLF 写回磁盘；
+# 一旦之后把 autocrlf 改成 false，磁盘上的 CRLF 与仓库里的 LF 直接对比，
+# 会产生「每一行都改了」的假差异（实测一次 1141 增 1141 删，内容一字未变）。
+#
+# 对本项目尤其重要：数据集是 JSONL，一行一条任务。行尾不统一会让 diff 完全不可读，
+# 别人提 PR 加题时根本看不出改了哪几条。
+* text=auto eol=lf
+
+# 二进制文件不做任何转换
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary
