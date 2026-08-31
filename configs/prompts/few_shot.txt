@@ -7,26 +7,7 @@
 
 以下是两个示例。
 
-示例一
-设备现状：华为 S5700，当前处于用户视图。
-任务：把设备主机名改为 CoreSW。
-```
-system-view
-sysname CoreSW
-```
-
-示例二
-设备现状：华为 S5700，当前处于用户视图。
-任务：创建 VLAN 10 并命名为 mgmt，然后为其配置管理地址 10.1.1.1/24。
-```
-system-view
-vlan 10
-name mgmt
-quit
-interface Vlanif 10
-ip address 10.1.1.1 255.255.255.0
-```
-
+{examples}
 现在请完成下面这个任务。
 
 设备现状：{context}

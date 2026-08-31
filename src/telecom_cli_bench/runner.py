@@ -10,17 +10,46 @@ from pathlib import Path
 import httpx
 from tqdm.asyncio import tqdm_asyncio
 
-from .schema import Task
+from .schema import Task, load_tasks
 
 BASE_URL = "http://localhost:11434"
 VENDOR_CN = {"huawei": "华为 VRP", "cisco": "思科 IOS"}
 
+DEMO_FILE = Path("data/tasks/demo.jsonl")
+
+
+def build_examples(vendor: str) -> str:
+    """按厂商取 few-shot 示例。
+
+    ⚠️ 这是本项目最容易犯的一个错：如果 few-shot 模板里写死华为示例，
+    跑思科题时就等于在提示词里主动教模型串味，
+    厂商串味率这个核心指标会直接失真。
+    示例必须和题目同厂商。
+    """
+    if not DEMO_FILE.exists():
+        return ""
+    demos = [t for t in load_tasks(DEMO_FILE, include_demo=True) if t.vendor.value == vendor]
+    demos.sort(key=lambda t: t.level)  # 先 L1 后 L2，由易到难
+    blocks = []
+    for i, t in enumerate(demos[:2], 1):
+        cmds = "\n".join(t.reference)
+        blocks.append(
+            f"示例{'一' if i == 1 else '二'}\n"
+            f"设备现状：{t.context}\n"
+            f"任务：{t.instruction}\n"
+            f"```\n{cmds}\n```\n"
+        )
+    return "\n".join(blocks)
+
 
 def build_prompt(template: str, task: Task) -> str:
+    vendor = task.vendor.value
+    # zero_shot / syntax_hint 模板里没有 {examples}，多传的参数会被 format 忽略
     return template.format(
-        vendor_cn=VENDOR_CN[task.vendor.value],
+        vendor_cn=VENDOR_CN[vendor],
         context=task.context or "（无特殊说明）",
         instruction=task.instruction,
+        examples=build_examples(vendor),
     )
 
 

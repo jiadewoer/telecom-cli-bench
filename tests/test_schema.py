@@ -16,3 +16,12 @@ def test_task_ids_are_unique():
     tasks = load_tasks(TASK_DIR, include_demo=True)
     ids = [t.id for t in tasks]
     assert len(ids) == len(set(ids))
+
+
+def test_few_shot_demos_cover_both_vendors():
+    """few-shot 示例必须每个厂商都有，否则跑另一厂商的题时会在提示词里教模型串味。"""
+    demos = [t for t in load_tasks(TASK_DIR, include_demo=True) if t.id.startswith("demo_")]
+    vendors = {t.vendor.value for t in demos}
+    assert vendors == {"huawei", "cisco"}, f"缺少示例的厂商: {{'huawei','cisco'}} - {vendors}"
+    for v in vendors:
+        assert len([t for t in demos if t.vendor.value == v]) >= 2, f"{v} 的示例少于 2 条"
