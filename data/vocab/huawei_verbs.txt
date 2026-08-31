@@ -54,3 +54,15 @@ ssh
 snmp-agent
 clock
 header
+import-route
+silent-interface
+batch
+add
+reset
+debugging
+undo-alarm
+filter-policy
+preference
+route-distinguisher
+vpn-target
+ipv4-family

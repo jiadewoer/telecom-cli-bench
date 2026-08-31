@@ -93,6 +93,11 @@ class TaskScore:
     unknown_verbs: list[str] = field(default_factory=list)
     tags: list[str] = field(default_factory=list)
     passed: bool = False
+    # 失败的唯一原因是没写 system-view / configure terminal。
+    # 单独记一列，是为了让 README 能同时给出两个数字：严格通过率与去掉这条后的通过率。
+    # 首轮实测 qwen2.5:7b 上这两个数是 10.0% 和 51.2%，差了五倍——
+    # 不给出后者，读者会严重低估模型的配置内容能力。
+    mode_only_fail: bool = False
     latency_s: float = 0.0
 
     def to_row(self) -> dict:
@@ -106,6 +111,9 @@ class TaskScore:
             "format_ok": self.format_ok,
             "checkpoint_score": round(self.checkpoint_score, 4),
             "passed": self.passed,
+            "mode_only_fail": self.mode_only_fail,
+            "hit": "|".join(self.hit),
+            "miss": "|".join(self.miss),
             "unsafe": bool(self.unsafe),
             "confusion": bool(self.confusion),
             "unknown_verbs": len(self.unknown_verbs),
@@ -113,6 +121,10 @@ class TaskScore:
             "latency_s": round(self.latency_s, 2),
         }
 
+
+# 「进入配置模式」这一条检查点。见 docs/notes.md D4：保留它是有意的决定，
+# 但它单独主导了近一半的失败案例，所以必须能把它的影响单独量化出来。
+MODE_ENTRY_PATTERNS = {r"^system-view$", r"^configure terminal$"}
 
 _VOCAB_CACHE: dict[str, set[str]] = {}
 
@@ -168,6 +180,9 @@ def score_one(
     score = gained / task.total_weight if task.total_weight else 0.0
     passed = fenced and not miss and not unsafe
 
+    missed_patterns = {cp.pattern for cp in task.checkpoints if cp.id in miss}
+    mode_only = bool(miss) and missed_patterns <= MODE_ENTRY_PATTERNS and fenced and not unsafe
+
     tags = []
     # 判定依据是归一化后的 blob，不是原始 commands。
     # 模型可能输出一串纯设备提示符（[Huawei] 之类），commands 非空但归一化后什么都不剩，
@@ -204,5 +219,6 @@ def score_one(
         unknown_verbs=sorted(set(unknown)),
         tags=tags,
         passed=passed,
+        mode_only_fail=mode_only,
         latency_s=latency_s,
     )

@@ -43,7 +43,10 @@ def load_scores(path: Path) -> pd.DataFrame:
 def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
     """主榜只用 zero_shot 一档：加了提示词的成绩不能和裸跑的混排。"""
     df = load_scores(path)
-    d = df[df.prompt == prompt]
+    d = df[df.prompt == prompt].copy()
+    if "mode_only_fail" not in d.columns:  # 兼容旧的 scores.jsonl
+        d["mode_only_fail"] = False
+    d["passed_lenient"] = d["passed"] | d["mode_only_fail"].fillna(False).astype(bool)
     if d.empty:
         raise ValueError(f"没有 prompt={prompt} 的数据，实际有: {sorted(df.prompt.unique())}")
 
@@ -51,6 +54,11 @@ def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
         d.groupby("model")
         .agg(
             任务通过率=("passed", "mean"),
+            # 第二个通过率：把「唯一失败原因是没写 system-view / configure terminal」
+            # 的那些也算通过。见 docs/notes.md D4——保留模式检查点是有意的决定，
+            # 但它单独主导了近一半的失败，只给严格通过率会让读者严重低估模型。
+            # 实测 qwen2.5:7b 这两个数是 10.0% 与 51.2%。
+            宽松通过率=("passed_lenient", "mean"),
             检查点得分=("checkpoint_score", "mean"),
             格式合规率=("format_ok", "mean"),
             危险命令率=("unsafe", "mean"),

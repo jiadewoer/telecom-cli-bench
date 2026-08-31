@@ -46,3 +46,13 @@ redistribute
 area
 clock
 crypto
+neighbor
+debug
+undebug
+access-group
+channel-protocol
+distance
+default
+vrf
+exec-timeout
+mpls

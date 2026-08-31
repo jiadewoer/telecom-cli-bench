@@ -65,6 +65,13 @@ async def _ask(
                     "model": model,
                     "messages": [{"role": "user", "content": prompt}],
                     "temperature": 0.0,
+                    # seed 必须显式给。只设 temperature=0 不够：Ollama 在并发时会把
+                    # 多个请求拼进同一个 batch，batch 组成不同会让浮点归约顺序变化，
+                    # 贪心解码也可能走出不同路径。实测同模型同提示词两次跑，
+                    # 80 条里有 11 条（22%）原始输出不一致，其中 hw_diag_003
+                    # 从 1.00 掉到 0.67，cs_acl_017 从 0.00 升到 0.75。
+                    "seed": 42,
+                    "top_p": 1.0,
                     "max_tokens": 768,
                 },
                 timeout=900,
@@ -82,12 +89,13 @@ async def run_model(
     template: str,
     tasks: list[Task],
     out_dir: Path,
-    concurrency: int = 2,
+    concurrency: int = 1,
 ) -> Path:
     """跑一个 (模型 × 提示词) 组合，原始输出落盘。
 
     并发只开 2：8GB 卡上开高了会排队，反而更慢，还可能触发卸载。
-    temperature=0 保证可复现——这是 benchmark 的底线。
+    temperature=0 + seed 固定 + 单并发，共同保证可复现——这是 benchmark 的底线。
+    并发>1 时 Ollama 的 batch 组成会引入非确定性，见 _ask 里的注释与 docs/notes.md D13。
     """
     sem = asyncio.Semaphore(concurrency)
     out_dir.mkdir(parents=True, exist_ok=True)
