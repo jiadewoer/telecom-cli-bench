@@ -1,0 +1,8 @@
+[
+  {"model": "qwen2.5:1.5b",     "note": "小模型基线"},
+  {"model": "qwen2.5:3b",       "note": "小模型"},
+  {"model": "qwen2.5:7b",       "note": "8GB 甜点"},
+  {"model": "qwen2.5-coder:7b", "note": "代码模型，看是否对 CLI 更友好"},
+  {"model": "llama3.1:8b",      "note": "英文系模型，看中文指令 + 中文场景表现"},
+  {"model": "deepseek-r1:7b",   "note": "推理模型，输出需剥 <think>"}
+]
