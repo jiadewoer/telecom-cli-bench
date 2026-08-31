@@ -14,9 +14,7 @@ def test_interface_forms_converge():
 
 
 def test_device_prompt_is_stripped():
-    assert (
-        normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
-    )
+    assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
     assert normalize_line("<Huawei> save", "huawei") == "save"
     assert normalize_line("Switch(config)# no shutdown", "cisco") == "no shutdown"
     assert normalize_line("Switch(config-if)#switchport mode access", "cisco") == (
@@ -79,3 +77,31 @@ def test_unclosed_think_tag():
     text = "<think>思考中，忘了闭合\n```\nvlan 100\n```"
     cmds, _ = extract_commands(text)
     assert cmds == ["vlan 100"]
+
+
+def test_cisco_conf_t_variants():
+    """conf t 是思科工程师最常用的敲法，不归一会把大量正确答案判错。
+
+    首轮实测中 qwen2.5:7b 就输出了 `conf t`，被误判为未进入全局配置模式。
+    """
+    for form in ["conf t", "config t", "configure t", "conf term",
+                 "conf terminal", "configure terminal", "CONF T"]:
+        assert normalize_line(form, "cisco") == "configure terminal", f"未归一: {form}"
+
+
+def test_conf_t_rule_does_not_leak_to_huawei():
+    """华为设备上没有 configure terminal，这条规则不能作用于华为。"""
+    assert normalize_line("conf t", "huawei") != "configure terminal"
+
+
+def test_whole_line_brackets_are_unwrapped_not_dropped():
+    """模型可能把命令逐行包在方括号里，不能当成设备提示符整行丢掉。
+
+    首轮实测中 qwen2.5:7b 对两道 VLAN 题输出的就是 [vlan 100] 这种形式，
+    原实现把整行抹成空字符串，得分从应有的 0.83 掉到 0.00。
+    """
+    assert normalize_line("[vlan 100]", "huawei") == "vlan 100"
+    assert normalize_line("[quit]", "huawei") == "quit"
+    assert normalize_line("[port default vlan 100]", "huawei") == "port default vlan 100"
+    # 带命令的提示符仍按提示符处理
+    assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"

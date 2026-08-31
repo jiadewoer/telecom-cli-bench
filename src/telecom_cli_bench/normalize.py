@@ -19,6 +19,13 @@ _COMMENT = re.compile(r"^\s*[#!]|^\s*//")
 _PROMPT_PREFIX = re.compile(r"^\s*(?:<[^>]{0,40}>|\[[^\]]{0,40}\]|[\w.()/-]{1,40}[#>])\s*")
 _LIST_MARKER = re.compile(r"^\s*(?:\d+[.)]|[-*+])\s+")
 
+# 整行被方括号包住的情况。设备提示符总是出现在命令「前面」并跟着命令，
+# 所以整行只有一个方括号组时，更可能是模型把命令本身包了起来。
+# 取舍：拆括号保留内容，而不是当提示符丢掉——
+# 漏掉一条正确命令的代价，大于多出一条无效命令的代价（后者最多被标成幻觉，
+# 不影响 passed 判定）。首轮实测 qwen2.5:7b 就把整份配置逐行包在了方括号里。
+_BRACKET_ONLY = re.compile(r"^\[([^\]]{1,80})\]$")
+
 # 一级 token 别名：同厂商内的通用缩写
 _TOKEN_ALIASES: dict[str, dict[str, str]] = {
     "huawei": {
@@ -55,6 +62,11 @@ _IFACE_RULES: list[tuple[re.Pattern[str], str]] = [
 _IFACE_SPACE = re.compile(
     r"\b(xgigabitethernet|gigabitethernet|ethernet|loopback|vlanif)\s+(?=\d)", re.I
 )
+
+# 思科进全局配置模式的各种缩写：conf t / config t / configure t / conf term / ...
+# 单 token 别名表处理不了这种「两个词各自都缩写」的情况，单独出一条规则。
+# 这是工程师现实中最常用的敲法，不处理会把大量正确答案判错。
+_CISCO_CONF_T = re.compile(r"^conf(?:ig(?:ure)?)?\s+t(?:erm(?:inal)?)?$")
 
 
 def strip_think(text: str) -> str:
@@ -94,13 +106,19 @@ def extract_commands(text: str) -> tuple[list[str], bool]:
 
 def normalize_line(line: str, vendor: str) -> str:
     """单行归一化：剥提示符、展开缩写、统一接口名、压空白、转小写。"""
-    s = _PROMPT_PREFIX.sub("", line.strip())
+    s = line.strip()
+    m = _BRACKET_ONLY.match(s)
+    if m:
+        s = m.group(1).strip()
+    s = _PROMPT_PREFIX.sub("", s)
     s = _LIST_MARKER.sub("", s)
     s = re.sub(r"\s+", " ", s).strip().lower()
     if not s or _COMMENT.match(s):
         return ""
 
     aliases = _TOKEN_ALIASES.get(vendor, {})
+    if vendor == "cisco":
+        s = _CISCO_CONF_T.sub("configure terminal", s)
     # 先做多词别名（如 cisco 的 "ip add"），再做单 token
     for k, v in aliases.items():
         if " " in k:
