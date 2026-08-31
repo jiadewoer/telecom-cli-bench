@@ -14,7 +14,9 @@ def test_interface_forms_converge():
 
 
 def test_device_prompt_is_stripped():
-    assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
+    assert (
+        normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
+    )
     assert normalize_line("<Huawei> save", "huawei") == "save"
     assert normalize_line("Switch(config)# no shutdown", "cisco") == "no shutdown"
     assert normalize_line("Switch(config-if)#switchport mode access", "cisco") == (

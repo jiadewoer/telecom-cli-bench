@@ -57,8 +57,11 @@ def score() -> None:
                     skipped += 1
                     continue
                 s = score_one(
-                    tasks[d["task_id"]], d["model"], d["prompt"],
-                    d["output"], d.get("latency_s", 0.0),
+                    tasks[d["task_id"]],
+                    d["model"],
+                    d["prompt"],
+                    d["output"],
+                    d.get("latency_s", 0.0),
                 )
                 rows.append(s.to_row())
     out = SCORE_DIR / "scores.jsonl"
@@ -84,7 +87,9 @@ def inspect(model: str, prompt: str = "zero_shot", n: int = 5) -> None:
         console.print(d["output"][:600])
         console.print("[dim]--- 归一化后 ---[/dim]")
         console.print(s.normalized or "(空)")
-        console.print(f"[dim]命中[/dim] {s.hit}  [dim]未命中[/dim] {s.miss}  [dim]标签[/dim] {s.tags}")
+        console.print(
+            f"[dim]命中[/dim] {s.hit}  [dim]未命中[/dim] {s.miss}  [dim]标签[/dim] {s.tags}"
+        )
 
 
 @app.command()
