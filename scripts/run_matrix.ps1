@@ -2,7 +2,7 @@
 # 中断了不要紧：原始输出按组合分文件存，已完成的文件还在，
 # 重跑时下面的 if 会自动跳过已有结果。
 
-$models  = (Get-Content configs\models.json | ConvertFrom-Json).model
+$models = (Get-Content configs\models.json -Raw -Encoding UTF8 | ConvertFrom-Json).model
 $prompts = @("zero_shot", "few_shot", "syntax_hint")
 $t0 = Get-Date
 
