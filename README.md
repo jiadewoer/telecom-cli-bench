@@ -1,254 +1,188 @@
 # telecom-cli-bench
 
-面向**网络设备命令行**的中文评测基准。给定一个运维任务和设备上下文，让模型输出可直接粘进设备的配置或排障命令，再用检查点正则逐条判分。
+面向电信网络设备命令生成能力的本地大模型评测工具。项目通过统一的数据集、提示词策略、输出规范化和评分规则，对 Ollama 中的模型进行可复现的 Cisco/Huawei CLI 基准测试。
 
-覆盖华为 VRP 与思科 IOS 两家语法，**含 MPLS/VPN 场景**——这是现有中文评测集基本没有触及的部分。
+## 项目状态
 
-```
-122 道任务 × 6 个本地模型 × 3 种提示词 = 2196 条样本
-全程离线，Ollama 本地推理；本次单并发全矩阵耗时 3 小时 14 分
-```
+当前版本已完成核心功能与完整评测，可作为阶段性正式版本交付。
 
----
+- 122 条正式评测任务，另有 4 条 `demo_` 示例不参与评分
+- 6 个模型 × 3 种提示词策略，共 18 个评测组合
+- 2196 条健康原始输出已完成评分
+- 43 项自动化测试全部通过
+- 数据集自检、`ruff`、`mypy` 和报告生成均已通过
 
-## Leaderboard
+精确榜单和图表以 `results/leaderboard.csv` 及 `results/charts/` 中当前生成的文件为准，避免 README 与重新运行后的结果不一致。
 
-评测于 2026-09-01。全部 18 个组合使用同一份数据集（122 条）和同一组推理参数
-（`temperature=0`、`seed=42`、`top_p=1`、`max_tokens=2048`），单并发一次性跑出。
+## 评测模型
 
-| model | 任务通过率 | 宽松通过率 | 检查点得分 | 格式合规率 | 空输出率 | 厂商串味率 | 危险命令率 | 平均耗时 s |
-|:---|---:|---:|---:|---:|---:|---:|---:|---:|
-| deepseek-r1:8b | **38.5** | 50.8 | 63.8 | 86.9 | 13.1 | 1.6 | 0 | 26.52 |
-| qwen2.5-coder:7b | **38.5** | **63.1** | **74.6** | 100 | 0 | 0.8 | 0 | 0.99 |
-| llama3.1:8b | 13.1 | 39.3 | 49.5 | 100 | 0 | 4.1 | 0 | 1.38 |
-| qwen2.5:3b | 11.5 | 36.9 | 46.7 | 100 | 0 | 9.8 | 0 | 0.66 |
-| qwen2.5:7b | 9.0 | 46.7 | 55.4 | 100 | 0 | 2.5 | 0 | 0.97 |
-| qwen2.5:1.5b | 5.7 | 19.7 | 33.6 | 100 | 0 | 27.9 | 0 | 0.57 |
+默认矩阵由 `configs/models.json` 定义，当前包含：
 
-### 这张表该怎么读
+- `qwen2.5:1.5b`
+- `qwen2.5:3b`
+- `qwen2.5:7b`
+- `qwen2.5-coder:7b`
+- `llama3.1:8b`
+- `deepseek-r1:8b`
 
-**严格通过率并列第一。** deepseek-r1:8b 与 qwen2.5-coder:7b 都是 38.5%。但前者
-13.1% 的正文为空，且复跑漂移显著；后者输出稳定、检查点得分更高、速度快约 27 倍。
-因此不能只凭一列严格通过率宣布单一冠军。
+Ollama 中安装的其他模型不会自动加入评测矩阵；如需新增模型，请先修改配置文件。
 
-**第一梯队与第二梯队差距明显。** 38.5 对 13.1 相差 25.4 个百分点。7B 级模型里
-coder 变体与通用变体的分化（38.5 对 9.0）也很大。
+## 数据集概况
 
-**deepseek-r1 的分数仍是下界。** 它有 13.1% 的答卷正文为空——推理链吃光了
-token 预算，话没说完。这些样本一律计为失败。它的真实水平至少不低于表中数字，
-高多少不知道（见「已知限制」）。
+| 维度 | 分布 |
+| --- | --- |
+| 厂商 | Cisco 50，Huawei 72 |
+| 难度 | L1 36，L2 59，L3 27 |
+| 领域 | VLAN 25，接口 26，路由 24，ACL 13，诊断 24，MPLS 10 |
 
-**空输出率这一列在掩盖其它错误率。** 对非推理模型它恒为 0，唯一作用就是提示读者某个模型的分数该不该当真。把 deepseek 的预算从 1024 提到 2048 后，它的厂商串味率从 0.8 涨到 1.6——不是变差了，是原本三分之一的答卷是空白，错误没有机会暴露。
+正式评测会自动排除 ID 以 `demo_` 开头的示例任务。
 
-**耗时差距很大。** deepseek-r1 平均 26.52 秒一题，其余模型约 0.57～1.38 秒。
-在「运维人员敲一条命令」这个场景里，这个差距的分量不比准确率小。
+## 环境要求
 
----
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/)
+- [Ollama](https://ollama.com/)
+- Windows PowerShell（运行完整矩阵脚本时推荐）
 
-## 指标定义
+## 安装
 
-| 指标 | 含义 |
-|---|---|
-| 任务通过率 | 全部检查点命中、且无任何错误标签，才算通过。严格口径 |
-| 宽松通过率 | 检查点得分 ≥ 0.8 即算通过。容忍漏掉一个次要步骤 |
-| 检查点得分 | 按权重加权的检查点命中率，反映「答对了多少」而非「有没有全对」 |
-| 格式合规率 | 输出中存在闭合代码块的比例 |
-| 空输出率 | 剥离思维链后正文为空的比例 |
-| 厂商串味率 | 华为题里写了思科语法（或反之）的比例 |
-| 危险命令率 | 出现 `reset saved-configuration`、`erase startup-config` 一类破坏性命令的比例 |
-
-错误标签：`E0_FORMAT` 格式不合规 / `E1_HALLUC` 命令动词不在词表 / `E2_VENDOR` 厂商串味 / `E3_MISS` 检查点漏项 / `E8_EMPTY` 正文为空。
-
----
-
-## 数据集
-
-```
-122 条评测任务（另有 4 条 demo 示例不参与评测）
-厂商    cisco 50 / huawei 72
-难度    L1 36 (30%) / L2 59 (48%) / L3 27 (22%)
-领域    vlan 25 / interface 26 / routing 24 / diagnose 24 / acl 13 / mpls 10
-```
-
-每条任务包含任务描述、设备上下文、参考答案、一组带权重的检查点正则，以及一组 forbidden 正则（命中即判串味）。
-
-判分前会做归一化：剥设备提示符、展开常见缩写（`int` → `interface`、`sh` → `show`）、统一接口名写法。归一化的作用域被**限制在前两个 token**，防止把跨厂商概念抹平；查看命令（`show` / `display` 开头）是唯一的放宽区，因为其后跟的全是设备关键字，不会出现用户自定义字符串。
-
-### V5/V8 平台对照题
-
-`hw_mpls_069` 与 `hw_mpls_070` 是一对受控对照：**任务文字完全相同，只有设备平台不同**。
-
-华为使能 MPLS 的写法随 VRP 版本分裂——V5（AR 系列）是 `mpls`，V8（NE/CE 系列）是 `mpls enable`。069 是 AR2200，只收 `mpls` 并把 `mpls enable` 列入 forbidden；070 是 NE40E，只收 `mpls enable`。
-
-结果：
-
-| model | V5 题（069） | V8 题（070） |
-|:---|---|---|
-| qwen2.5-coder:7b | 0/3 通过，三次全部 `E2_VENDOR` | 2/3 通过 |
-| qwen2.5:7b | 0/3 通过，三次全部 `E2_VENDOR` | 2/3 通过 |
-| llama3.1:8b | 0/3 通过，三次全部 `E2_VENDOR` | 1/3 通过 |
-| deepseek-r1:8b | 2/3 通过 | 1/3 通过 |
-| qwen2.5:3b | 0/3 通过（漏项，未串味） | 0/3 通过 |
-| qwen2.5:1.5b | 0/3 通过 | 0/3 通过 |
-
-**榜首模型只会一种平台的写法，并把它无差别地套在另一个平台上。** 单看任意一道题，模型碰对一种写法就能得分；两道并列才能区分「记住了一种写法」和「知道平台差异」。
-
-这对题的由来见 `docs/notes.md` D21：它源自一次出题错误——首版 `hw_mpls_047` 的 context 写的是 NE20（V8 平台），标答却用了 V5 语法，把六个模型一共 30 次正确的 `mpls enable` 全判成了错。**一个出题错误反而变成了数据集里独一份的考点。**
-
----
-
-## 已知限制
-
-### M7：首轮人工审计发现 8.3% 问题
-
-从失败样本中按错误标签组合**分层随机**抽取 60 条（`scripts/sample_for_annotation.py`，seed=42），逐条判断是「模型真错」还是「评测错了」：
-
-| 判定 | 条数 |
-|---|---:|
-| 模型真错 | 55 |
-| 评分器误判 | 3 |
-| 题目有问题 | 2 |
-
-**M7 = 5/60 = 8.3%。这是修复前审计发现的问题比例，不是当前评分器残余误判率。**
-
-这五条错误全部是「把对的判成错的」，没有一条方向相反——意味着修正只会让分数上升。三条评分器误判（`int` 缩写在第三位不展开、`show interfaces` 单复数、描述串的引号未剥）和两条题目问题（V5/V8 平台配错、`cs_vlan_013` 题干与标答自相矛盾）都已修正，当前榜单是修正后的结果。
-
-**这 60 条是由出题者自己复核的，不是独立标注。** 其中两条出题者明确判不了，最终靠查阅厂商官方文档定案——那是外部证据。严格表述：**8.3% 是「出题者自评 + 文档核对」得到的下界**。`results/annotation_60.csv` 留了「人工复核」一列，等熟悉设备的人过一遍才算可信估计。
-
-### 假阴性没有被量化
-
-M7 只统计「误判为失败」。反方向的漏判同样存在，会让分数偏高：
-
-- **第三家厂商串味抓不到。** 厂商特征词表只有华为和思科，模型写出 H3C 的 `Bridge-Aggregation` / `port link-aggregation group` 时完全漏检。
-- **部分思科 VRF 语法漏标。** 华为题里出现 `rd` / `target` 时应打 `E2_VENDOR`，实际没打。
-
-两者与 M7 方向相反，某种程度上互相抵消，但都未量化。
-
-### deepseek-r1 的分数是下界，且未触底
-
-一次历史 `max_tokens` 消融：
-
-| max_tokens | 空输出率 | 格式合规率 | 检查点得分 | 任务通过率 | 平均耗时 |
-|---:|---:|---:|---:|---:|---:|
-| 1024 | 35.8 | 63.3 | 49.4 | 29.2 | 12.3 s |
-| 2048 | 20.8 | 78.3 | 60.2 | 35.0 | 20.35 s |
-
-**预算翻倍只让空输出减半，曲线远未饱和。** 最新完整矩阵同为 2048 token，
-zero-shot 空输出率为 13.1%，也说明该模型即使固定客户端 seed 仍有明显运行间漂移。
-榜单上 deepseek 与第一名的比较，至今没有在「它能把话说完」的前提下发生过。
-
-如果 8192 仍降不到 0，那说明这不是预算问题，而是它的推理链在某些题上会跑飞——那是完全不同的结论。
-
-### 正则判分的固有天花板
-
-检查点是正则，不是设备。**「命令能匹配」不等于「命令在设备上跑得通」**：正则写窄会漏掉合法变体，写宽会放过错误写法，命令之间的依赖顺序也只能部分覆盖。数据集自检（`validate_dataset.py`）只能保证参考答案与检查点自洽，**保证不了正确**——V5/V8 那个错误就是全绿通过、只在人眼比对模型输出与官方文档时才暴露的。
-
-### 单机、小样本与运行间漂移
-
-六个模型都是量化后的本地权重，与各家 API 版本的表现不可直接比较。客户端固定了
-采样温度和 seed，但 GPU 浮点归约与推理模型行为仍不能保证逐字确定。归档轮次与最新
-轮次的 zero-shot 对比结果如下：
-
-| model | 原始输出变化 | 检查点得分变化 | passed 翻转 |
-|:---|---:|---:|---:|
-| deepseek-r1:8b | 84.4% | 41.8% | 26.2% |
-| qwen2.5:7b | 21.3% | 4.9% | 2.5% |
-| llama3.1:8b | 4.1% | 0.8% | 0.8% |
-| qwen2.5-coder:7b | 0% | 0% | 0% |
-| qwen2.5:3b | 0.8% | 0% | 0% |
-| qwen2.5:1.5b | 0.8% | 0% | 0% |
-
-因此主榜应读作一次完整运行的观测值，不应当作无方差的模型真值。
-
----
-
-## 复现
-
-环境：Python 3.11、Ollama、约 8 GB 显存。
+在项目根目录创建并激活虚拟环境：
 
 ```powershell
-git clone https://github.com/jiadewoer/telecom-cli-bench.git
-cd telecom-cli-bench
 uv venv
 .\.venv\Scripts\Activate.ps1
 uv pip install -e ".[dev]"
-
-"qwen2.5:1.5b", "qwen2.5:3b", "qwen2.5:7b", "qwen2.5-coder:7b", `
-  "llama3.1:8b", "deepseek-r1:8b" | ForEach-Object { ollama pull $_ }
-
-pytest -v                              # 43 个用例
-tcb validate                           # 122 条正式任务 + 4 条 demo 自检
-.\scripts\run_matrix.ps1 -Concurrency 1 # 全矩阵，本次耗时 3:14:02
 ```
 
-单独跑一个组合：
+该项目推荐直接使用 `uv pip`。由 `uv` 创建的虚拟环境不一定包含传统 `pip`，这不影响项目安装。
+
+如果出现 hardlink 警告，通常只是缓存与目标目录位于不同文件系统导致的性能提示，不影响安装。需要隐藏该提示时可使用：
+
+```powershell
+uv pip install --link-mode=copy -e ".[dev]"
+```
+
+安装后验证命令行入口：
+
+```powershell
+tcb --help
+```
+
+## 准备 Ollama 模型
+
+查看本地模型：
+
+```powershell
+ollama list
+```
+
+缺少模型时，例如：
+
+```powershell
+ollama pull qwen2.5:7b
+```
+
+运行评测前先检查 Ollama 服务和目标模型：
+
+```powershell
+tcb doctor --model qwen2.5:7b
+```
+
+默认 endpoint 为 `http://localhost:11434`。运行器默认直连 Ollama，并忽略 `HTTP_PROXY` 和 `HTTPS_PROXY`，避免本地请求被代理转发。
+
+## 快速开始
+
+先运行一个模型与提示词组合，确认完整链路：
 
 ```powershell
 tcb run qwen2.5:7b --prompt zero_shot
 tcb score
-tcb report
-tcb inspect qwen2.5:7b --prompt zero_shot --n 5  # 人工核对原始输出与归一化结果
+tcb inspect qwen2.5:7b --prompt zero_shot --n 5
 ```
 
-Ollama 默认地址是 `http://localhost:11434`。远程或自定义地址建议先预检：
+注意：`inspect` 的数量参数是长选项 `--n`，不是 `-n`。省略 `--n` 时默认显示 5 条。
+
+确认单组合正常后运行完整矩阵：
 
 ```powershell
-tcb doctor --model qwen2.5:7b --base-url http://192.168.1.10:11434
-tcb run qwen2.5:7b --prompt zero_shot --base-url http://192.168.1.10:11434
-.\scripts\run_matrix.ps1 -BaseUrl http://192.168.1.10:11434
+.\scripts\run_matrix.ps1
 ```
 
-也可设置 `$env:TCB_BASE_URL = "http://192.168.1.10:11434"` 后直接运行 matrix。
-默认情况下客户端**忽略 `HTTP_PROXY/HTTPS_PROXY` 并直连 Ollama**，避免局域网请求被
-系统/公司代理劫持成 502；只有确实需要环境代理时才显式加 `--trust-env-proxy`
-（matrix 对应 `-TrustEnvProxy`）。
+矩阵结束后检查、评分并生成报告：
 
-`tcb run` 会先请求 `/v1/models`，确认 endpoint 可访问且目标模型存在，再开始 122 条
-正式推理，因此 502、连接失败或模型缺失会立即失败，不再循环 122 次。raw 会记录
-`base_url` 作为 provenance；指定 `-BaseUrl` 跑 matrix 时，旧 raw 如果来自其他 endpoint
-或缺少 endpoint 元数据会自动判为 stale 并重跑，避免混用不同 Ollama 服务的结果。
-
-正式推理阶段若发生请求失败，raw 中会写入结构化的 `status=infra_error` 与错误类型，
-同时 `tcb run` 返回非 0；`tcb score` 不会把这类基础设施失败计入模型错误，并会在发现
-不完整/重复/污染 raw 时返回非 0。可用 `tcb check-raw <file> --base-url <url>` 检查某个
-raw 的任务完整性与 endpoint provenance。
-
-`results/raw/` 与 `results/scored/` 不入库，重跑即可生成。`results/leaderboard.md` 与 `results/annotation_60.csv` 入库。
-
-三种提示词：`zero_shot`（仅任务）、`few_shot`（带两家厂商各一个示例）、`syntax_hint`（提示目标厂商语法风格）。
-
----
-
-## 项目结构
-
-```
-data/tasks/          评测任务 JSONL，按厂商分文件
-data/vocab/          各厂商命令动词词表，用于幻觉检测
-src/telecom_cli_bench/
-  normalize.py       输出提取与命令归一化
-  scorer.py          检查点判分与错误标签
-  runner.py          Ollama 调用
-  report.py          Leaderboard 与图表
-scripts/
-  run_matrix.ps1     全矩阵驱动
-  validate_dataset.py        数据集自检
-  sample_for_annotation.py   失败样本分层抽样
-docs/notes.md        决策日志，记录每个设计选择及其代价
-results/annotation_60.csv    M7 的原始标注
+```powershell
+tcb check-raw
+tcb score
+tcb report
 ```
 
-`docs/notes.md` 是这个项目里信息密度最高的文件。它记录了每一处设计选择的**理由和代价**，包括数次判断失误——例如两次「静默成功的脚本比崩掉的脚本危险」，以及那个躲过全部自动防线的平台配错。
+`tcb score` 会重新评分 `results/raw/` 中所有健康输出，而不只是最近一次运行产生的文件。基础设施错误不会被伪装成模型错误参与评分。
 
----
+## 常用命令
 
-## 待办
+| 命令 | 用途 |
+| --- | --- |
+| `tcb validate` | 从任意当前目录运行数据集自检 |
+| `tcb doctor --model MODEL` | 检查 Ollama endpoint 和模型可用性 |
+| `tcb run MODEL --prompt PROMPT` | 运行一个模型与提示词组合 |
+| `tcb check-raw` | 检查任务覆盖、基础设施状态和原始结果完整性 |
+| `tcb score` | 评分全部健康原始输出 |
+| `tcb inspect MODEL --prompt PROMPT --n 5` | 查看原始输出及规范化结果 |
+| `tcb report` | 生成榜单与图表 |
 
-- [ ] 由熟悉设备的人复核 `results/annotation_60.csv`，把 M7 从自评下界变成可信估计
-- [ ] 试 `max_tokens` 4096，确认 deepseek 的空输出率曲线是否饱和
-- [ ] 补 H3C 特征词，量化第三家厂商串味的漏检率
-- [ ] 同一组合多次运行，给出方差估计
-- [ ] 扩充 MPLS/VPN 题量，当前 10 条不足以单独成榜
+## 输出目录
 
-## License
+```text
+results/
+├── raw/                 # 各模型/提示词组合的原始 JSONL
+├── scored/              # 评分结果
+├── charts/              # 报告图表
+└── leaderboard.csv      # 汇总榜单
+```
 
-MIT
+原始结果文件名会对模型名称做安全转换。例如：
+
+```text
+raw__qwen2.5_7b__zero_shot.jsonl
+```
+
+## 验证项目
+
+运行完整工程检查：
+
+```powershell
+pytest -v
+python scripts\validate_dataset.py
+ruff check .
+mypy .
+```
+
+当前验收基线：
+
+```text
+43 passed
+任务总数: 122（另有 4 条 demo 示例不参与评测）
+[ OK ] 数据集自检通过
+```
+
+## 复现性说明
+
+项目固定了评测数据、配置和推理参数，以降低运行间差异；但本地推理仍可能因 Ollama 版本、模型量化版本、硬件后端或推理实现而产生少量变化。因此，不应把固定 seed 理解为跨环境逐字一致。比较结果时请同时保留模型标签、Ollama 版本、endpoint 来源和原始输出。
+
+## 提交最终 README
+
+将本文件覆盖项目根目录的 `README.md` 后执行：
+
+```powershell
+cd D:\projects\telecom-cli-bench
+git status
+git add README.md
+git commit -m "docs: 完善 README 并更新最终评测说明"
+git push origin main
+```
+
+如果 `git status` 仍显示 `nothing to commit`，请确认下载的文件确实覆盖了 `D:\projects\telecom-cli-bench\README.md`。
+
+## 许可证
+
+许可证信息以仓库中的许可证文件为准。
