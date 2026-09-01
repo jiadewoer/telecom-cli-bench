@@ -105,3 +105,65 @@ def test_whole_line_brackets_are_unwrapped_not_dropped():
     assert normalize_line("[port default vlan 100]", "huawei") == "port default vlan 100"
     # 带命令的提示符仍按提示符处理
     assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
+
+
+def test_huawei_sh_is_not_expanded_to_display():
+    """华为侧不再把 sh 展开成 display。
+
+    这条规则曾经存在，注释写着「华为设备上 sh 不是 show，模型常写错，
+    这里不纵容」。首轮全矩阵 2160 次推理把两个判断都推翻了：
+
+    一、模型不常写错——华为题里写 sh 的次数是 0。
+    二、方向反了——VRP 上 sh 更可能是 shutdown 的缩写，
+        转成 display 会把「关闭接口」变成「查看接口」，语义完全颠倒。
+
+    零收益、非零风险，所以删掉。这条测试防止它被好心加回来。
+    """
+    assert normalize_line("sh int g0/0/1", "huawei").startswith("sh ")
+
+
+def test_cisco_sh_still_expands_to_show():
+    """思科侧 sh -> show 没有歧义，保留。删上一条规则时不能把这条一起删掉。"""
+    assert normalize_line("sh ip route", "cisco") == "show ip route"
+
+
+def test_view_commands_expand_mid_position_int():
+    """show ip int brief 是思科上最常见的敲法之一，必须归一化成全称。
+
+    D6 把别名展开限制在前两个 token，int 排在第三位就漏掉了。
+    人工标注 60 条时踩到（cs_diag_033 / llama3.1），全矩阵影响 10 处。
+    只在 show / display 开头的行上放宽：查看命令后面全是设备关键字，
+    不会出现用户自定义字符串，扩大作用域是安全的。
+    """
+    assert normalize_line("show ip int brief", "cisco") == "show ip interface brief"
+    assert normalize_line("display ip int brief", "huawei") == "display ip interface brief"
+
+
+def test_view_commands_unify_interface_plural():
+    """show interfaces trunk 与 show interface trunk 在 IOS 上等价，统一到单数。
+
+    没有任何命令靠 interface 的单复数区分语义。首版检查点写死了复数，
+    而全矩阵里模型用单数写了 46 处——这是三条归一化缺口里影响面最大的一条。
+    """
+    assert normalize_line("show interfaces trunk", "cisco") == "show interface trunk"
+    assert normalize_line("show interface trunk", "cisco") == "show interface trunk"
+
+
+def test_config_commands_keep_mid_tokens_intact():
+    """放宽只对查看命令生效，配置命令的中段一个字都不能动。
+
+    这条是上面两条的护栏：如果哪天有人把 _VIEW_CMD 的限制去掉，
+    description 之类的用户字符串就会被当成缩写展开。
+    """
+    assert normalize_line("description int-uplink", "cisco") == "description int-uplink"
+    assert normalize_line("description interfaces", "huawei") == "description interfaces"
+
+
+def test_quotes_are_stripped():
+    """模型受 Markdown 习惯影响会给描述加引号，设备上引号是字面量的一部分。
+
+    严格说两者不等价，但把 description "to-branch" 判成错答案对读者没有信息量。
+    人工标注时踩到一次（hw_route_059 / llama3.1），全矩阵 23 处命令带引号。
+    """
+    assert normalize_line('description "to-branch"', "huawei") == "description to-branch"
+    assert normalize_line("description 'To-Server'", "cisco") == "description to-server"

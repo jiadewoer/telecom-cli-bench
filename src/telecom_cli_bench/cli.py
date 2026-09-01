@@ -32,7 +32,9 @@ def validate() -> None:
 
 
 @app.command()
-def run(model: str, prompt: str = "zero_shot", concurrency: int = 2) -> None:
+def run(model: str, prompt: str = "zero_shot", concurrency: int = 1) -> None:
+    # 这里的默认值会覆盖 run_model 的默认值，两处必须一致。
+    # 曾经 cli 是 2、runner 是 1，外层静默生效，导致我以为自己在测并发 1 的表现。
     """跑一个模型 × 一套提示词。"""
     tasks = load_tasks(TASK_DIR)
     console.print(f"加载 {len(tasks)} 条评测任务（demo_ 前缀已排除）")
@@ -47,7 +49,9 @@ def score() -> None:
     tasks = {t.id: t for t in load_tasks(TASK_DIR)}
     SCORE_DIR.mkdir(parents=True, exist_ok=True)
     rows, skipped = [], 0
+    seen: dict[str, set[str]] = {}  # 组合 -> 该组合覆盖到的 task_id
     for p in sorted(RAW_DIR.glob("raw__*.jsonl")):
+        seen[p.stem.replace("raw__", "")] = set()
         with p.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
@@ -56,6 +60,7 @@ def score() -> None:
                 if d["task_id"] not in tasks:  # 题目被删或改名时不要炸掉
                     skipped += 1
                     continue
+                seen[p.stem.replace("raw__", "")].add(d["task_id"])
                 s = score_one(
                     tasks[d["task_id"]], d["model"], d["prompt"],
                     d["output"], d.get("latency_s", 0.0),
@@ -68,6 +73,34 @@ def score() -> None:
     console.print(f"[green]已评分 {len(rows)} 条[/green] -> {out}")
     if skipped:
         console.print(f"[yellow]跳过 {skipped} 条：原始输出里的 task_id 已不在数据集中[/yellow]")
+
+    # 反向检查：数据集里有、但某个组合没跑到的题。
+    #
+    # 上面那个 skipped 管的是「raw 有、数据集没有」，加题时会遇到的是反方向：
+    # 新题没有任何 raw，评分时静默缺席，报表照样出，没有任何提示。
+    # run_matrix.ps1 的 Test-Path 跳过逻辑会加重这件事——文件已存在就跳过，
+    # 不管它是不是旧数据集跑出来的。
+    #
+    # 这和 D12 记的那个「静默成功的脚本比崩掉的脚本危险」是同一类问题：
+    # 你会以为矩阵是完整的，直到发现某道题在所有模型上都没有数据。
+    if seen:
+        expected = set(tasks)
+        incomplete = {k: expected - v for k, v in seen.items() if expected - v}
+        if incomplete:
+            missing_all = set.intersection(*incomplete.values()) if len(incomplete) == len(seen) else set()
+            console.print(
+                f"[yellow]警告：{len(incomplete)}/{len(seen)} 个组合没有覆盖全部 "
+                f"{len(expected)} 道题[/yellow]"
+            )
+            if missing_all:
+                console.print(
+                    f"[yellow]  以下 {len(missing_all)} 道题在所有组合里都没有数据，"
+                    f"排行榜不包含它们：[/yellow]\n  {', '.join(sorted(missing_all))}"
+                )
+                console.print(
+                    "[yellow]  数据集加过题？删掉 results/raw/ 下对应文件后重跑 "
+                    "scripts/run_matrix.ps1。[/yellow]"
+                )
 
 
 @app.command()

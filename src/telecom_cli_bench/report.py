@@ -1,7 +1,7 @@
 """Leaderboard 与图表。
 
 三张图对应三条叙事：
-  图一 主榜        —— 谁能用（通过率 vs 危险命令率）
+  图一 主榜        —— 谁能用（通过率 vs 厂商串味率）
   图二 错误构成    —— 都错在哪里
   图三 提示词消融  —— 领域知识能不能靠提示词补上（本项目的差异化）
 """
@@ -47,6 +47,10 @@ def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
     if "mode_only_fail" not in d.columns:  # 兼容旧的 scores.jsonl
         d["mode_only_fail"] = False
     d["passed_lenient"] = d["passed"] | d["mode_only_fail"].fillna(False).astype(bool)
+    # 空输出率必须上主榜。首轮全矩阵里 deepseek-r1:8b 有 29.7% 的样本正文为空
+    # （思维链吃光了 max_tokens），这些 0 分会被读成「答错了」，其实是「没答完」。
+    # 把它单列出来，读者才知道该不该把这个模型的分数当回事。
+    d["empty_out"] = d["tags"].fillna("").str.contains("E8_EMPTY")
     if d.empty:
         raise ValueError(f"没有 prompt={prompt} 的数据，实际有: {sorted(df.prompt.unique())}")
 
@@ -61,8 +65,12 @@ def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
             宽松通过率=("passed_lenient", "mean"),
             检查点得分=("checkpoint_score", "mean"),
             格式合规率=("format_ok", "mean"),
-            危险命令率=("unsafe", "mean"),
+            空输出率=("empty_out", "mean"),
             厂商串味率=("confusion", "mean"),
+            # 危险命令率放在串味率后面：实测它在 2160 次推理上恒为 0.0%。
+            # 保留这一列不是因为它有区分度，而是因为「小模型不会乱敲
+            # reset saved-configuration」本身就是一条值得报告的结论。
+            危险命令率=("unsafe", "mean"),
             平均耗时s=("latency_s", "mean"),
         )
         .sort_values("任务通过率", ascending=False)
@@ -74,24 +82,29 @@ def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
 
 
 def plot_leaderboard(df: pd.DataFrame, out: Path, prompt: str = "zero_shot") -> None:
-    """图一：主榜。通过率向右，危险命令率向左，一眼看出「能用但危险」的模型。"""
+    """图一：主榜。通过率向右，厂商串味率向左，一眼看出「能答但答成了别家」的模型。
+
+    负半轴原来画的是危险命令率。实测全矩阵 2160 次推理上它恒为 0.0%，
+    画出来是一条空白——那个非零的旧数字来自 forbidden 被错误并进 unsafe，
+    测的其实就是串味。既然如此，直接把串味画在这里，指标和图形都诚实了。
+    """
     d = (
         df[df.prompt == prompt]
         .groupby("model")
-        .agg(passed=("passed", "mean"), unsafe=("unsafe", "mean"))
+        .agg(passed=("passed", "mean"), confusion=("confusion", "mean"))
         .sort_values("passed")
     )
     fig, ax = plt.subplots(figsize=(9, 5))
     y = range(len(d))
     ax.barh(y, d["passed"] * 100, color="#4C72B0", label="任务通过率 (%)")
-    ax.barh(y, -d["unsafe"] * 100, color="#C44E52", label="危险命令率 (%)")
+    ax.barh(y, -d["confusion"] * 100, color="#C44E52", label="厂商串味率 (%)")
     ax.set_yticks(list(y))
     ax.set_yticklabels(d.index, fontsize=9)
     ax.axvline(0, color="black", lw=0.8)
-    # 危险命令率是画在负半轴上的，但它本身不是负数，刻度要显示绝对值
+    # 串味率是画在负半轴上的，但它本身不是负数，刻度要显示绝对值
     ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{abs(v):.0f}"))
-    ax.set_xlabel("← 危险命令率      任务通过率 →")
-    ax.set_title("网络设备 CLI 任务：通过率 vs 危险命令率", fontsize=13)
+    ax.set_xlabel("← 厂商串味率      任务通过率 →")
+    ax.set_title("网络设备 CLI 任务：通过率 vs 厂商串味率", fontsize=13)
     ax.legend(loc="lower right")
     ax.grid(alpha=0.25, axis="x")
     fig.tight_layout()

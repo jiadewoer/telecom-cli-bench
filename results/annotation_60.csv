@@ -1,0 +1,357 @@
+﻿序号,task_id,model,prompt,vendor,domain,level,得分,未命中,标签,题目,参考答案,模型输出(归一化前),模型命令,未命中的检查点,verdict,判定理由,人工复核
+1,cs_acl_017,qwen2.5-coder:7b,few_shot,cisco,acl,2,0.25,c2|c3,E3_MISS,配置标准 ACL 10，拒绝源网段 192.168.1.0/24，放行其余所有流量。,configure terminal / access-list 10 deny 192.168.1.0 0.0.0.255 / access-list 10 permit any,"```
+configure terminal
+access-list 10 deny ip 192.168.1.0 0.0.0.255 any
+access-list 10 permit ip any any
+```",configure terminal / access-list 10 deny ip 192.168.1.0 0.0.0.255 any / access-list 10 permit ip any any,c2: ^(access-list 10 )?deny 192\.168\.1\.0 0\.0\.0\.255$ ⏎ c3: ^(access-list 10 )?permit any$,模型真错,标准ACL(1-99)不能用扩展语法 deny ip ... any；permit ip any any 在标准ACL上非法,
+2,cs_vlan_011,qwen2.5:1.5b,zero_shot,cisco,vlan,1,0.5,c1|c2,E3_MISS,创建 VLAN 30 并命名为 guest。,configure terminal / vlan 30 / name guest,"```shell
+switchport mode access
+switchport access vlan 30
+name guest
+```",switchport mode access / switchport access vlan 30 / name guest,c1: ^configure terminal$ ⏎ c2: ^vlan 30$,模型真错,完全没创建 VLAN，直接配 switchport,
+3,cs_vlan_044,qwen2.5-coder:7b,zero_shot,cisco,vlan,2,0.5,c3,E3_MISS,在已配置为 trunk 的 GigabitEthernet0/12 上，把 VLAN 20 从放行列表中移除。,configure terminal / interface GigabitEthernet0/12 / switchport trunk allowed vlan remove 20,"```
+configure terminal
+interface GigabitEthernet0/12
+no switchport trunk allowed-vlan 20
+end
+```",configure terminal / interface GigabitEthernet0/12 / no switchport trunk allowed-vlan 20 / end,c3: ^switchport trunk allowed vlan remove 20$,模型真错,no switchport trunk allowed-vlan 20 是恢复默认(全放行)，不是移除单个；且 allowed-vlan 无此写法,
+4,hw_mpls_048,qwen2.5:7b,zero_shot,huawei,mpls,2,0.0,c1|c2|c3|c4|c5,E1_HALLUC|E3_MISS,创建 VPN 实例 VPNA，配置 RD 为 100:1，入方向和出方向的 VPN Target 均为 100:1。,system-view / ip vpn-instance VPNA / ipv4-family / route-distinguisher 100:1 / vpn-target 100:1 both,"```markdown
+[vpn-instance VPNA]
+rd 100:1
+target 100:1 export
+target 100:1 import
+```",[vpn-instance VPNA] / rd 100:1 / target 100:1 export / target 100:1 import,c1: ^system-view$ ⏎ c2: ^ip vpn-instance vpna$ ⏎ c3: ^ipv4-family$ ⏎ c4: ^route-distinguisher 100:1$ ⏎ c5: ^vpn-target 100:1 both$,模型真错,rd/target 是思科 VRF 语法，华为为 route-distinguisher/vpn-target；vpn-instance 也缺 ip 前缀,
+5,hw_route_038,qwen2.5:3b,few_shot,huawei,routing,2,0.5,c3,E0_FORMAT|E2_VENDOR|E3_MISS,把 GigabitEthernet0/0/1 的 OSPF 接口开销值设为 100。,system-view / interface GigabitEthernet0/0/1 / ospf cost 100,"system-view
+ospf 1
+network 192.168.1.0 0.0.255.255 area 0
+quit
+interface GigabitEthernet0/0/1
+ip ospf cost 100",system-view / ospf 1 / network 192.168.1.0 0.0.255.255 area 0 / quit / interface GigabitEthernet0/0/1 / ip ospf cost 100,c3: ^ospf cost 100$,模型真错,ip ospf cost 是思科语法，华为为 ospf cost,
+6,hw_iface_028,qwen2.5:3b,zero_shot,huawei,interface,1,0.0,c1|c2|c3,E3_MISS,清除 GigabitEthernet0/0/8 上已配置的接口描述，恢复为默认。,system-view / interface GigabitEthernet0/0/8 / undo description,"```
+undo interface gigabitethernet 0/0/8 description
+```",undo interface gigabitethernet 0/0/8 description,c1: ^system-view$ ⏎ c2: ^interface gigabitethernet0/0/8$ ⏎ c3: ^undo description$,模型真错,undo interface X description 语法不存在，须先进接口视图,
+7,hw_diag_066,deepseek-r1:8b,syntax_hint,huawei,diagnose,3,0.6667,c2,E3_MISS,OSPF 邻居状态正常但学不到对端路由，请给出定位该问题最关键的三条查看命令。,display ospf routing / display ip routing-table protocol ospf / display ospf lsdb,"```shell
+display ospf error
+display ospf lsdb
+display ospf routing
+```",display ospf error / display ospf lsdb / display ospf routing,c2: ^display ip routing-table,模型真错,三条全在 OSPF 内部视角，未查 IP 路由表这一关键方向,
+8,cs_acl_017,qwen2.5:3b,zero_shot,cisco,acl,2,0.0,c1|c2|c3,E3_MISS,配置标准 ACL 10，拒绝源网段 192.168.1.0/24，放行其余所有流量。,configure terminal / access-list 10 deny 192.168.1.0 0.0.0.255 / access-list 10 permit any,"```
+access-list 10 deny ip any 192.168.1.0 0.0.0.255
+access-list 10 permit ip any any
+```",access-list 10 deny ip any 192.168.1.0 0.0.0.255 / access-list 10 permit ip any any,c1: ^configure terminal$ ⏎ c2: ^(access-list 10 )?deny 192\.168\.1\.0 0\.0\.0\.255$ ⏎ c3: ^(access-list 10 )?permit any$,模型真错,源目颠倒，且标准ACL用了扩展语法,
+9,cs_acl_006,qwen2.5:1.5b,syntax_hint,cisco,acl,2,0.0,c1|c2|c3,E3_MISS,配置扩展 ACL 100，拒绝主机 192.168.1.10 访问服务器 10.0.0.5 的 80 端口，其余流量全部放行。,configure terminal / access-list 100 deny tcp host 192.168.1.10 host 10.0.0.5 eq 80 / access-list 100 permit ip any any,"```shell
+access-list extended ACL_100 deny tcp any any eq www
+access-list extended ACL_100 permit ip any any
+ip access-group ACL_100 out
+```",access-list extended ACL_100 deny tcp any any eq www / access-list extended ACL_100 permit ip any any / ip access-group ACL_100 out,c1: ^(access-list 100\b|ip access-list extended 100$) ⏎ c2: ^(access-list 100 )?deny tcp host 192\.168\.1\.10 host 10\.0\.0\.5 eq (80|www)$ ⏎ c3: ^(access-list 100 )?permit ip any any$,模型真错,access-list extended 语法错误(应为 ip access-list extended)，且未指定主机,
+10,hw_vlan_005,qwen2.5-coder:7b,zero_shot,huawei,vlan,2,0.5556,c3|c4,E3_MISS,把 GigabitEthernet0/0/24 配置为 trunk 口，允许 VLAN 10 和 VLAN 20 通过。,system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk allow-pass vlan 10 20,"```markdown
+interface GigabitEthernet0/0/24
+port link-type trunk
+port trunk permit vlan 10 20
+```",interface GigabitEthernet0/0/24 / port link-type trunk / port trunk permit vlan 10 20,c3: ^port trunk allow-pass vlan .*\b10\b ⏎ c4: ^port trunk allow-pass vlan .*\b20\b,模型真错,port trunk permit vlan 是 H3C 语法，华为为 allow-pass,
+11,hw_iface_055,qwen2.5:1.5b,zero_shot,huawei,interface,1,0.0,c1|c2|c3,E3_MISS,关闭 GigabitEthernet0/0/13 接口的速率双工自协商。,system-view / interface GigabitEthernet0/0/13 / undo negotiation auto,"```bash
+undo interface gigabitethernet 0/0/13
+undo negotiation
+```",undo interface gigabitethernet 0/0/13 / undo negotiation,c1: ^system-view$ ⏎ c2: ^interface gigabitethernet0/0/13$ ⏎ c3: ^undo negotiation auto$,模型真错,undo interface X 语法错误，undo negotiation 缺 auto,
+12,cs_route_014,qwen2.5:3b,few_shot,cisco,routing,2,0.3333,c2,E3_MISS,配置一条到 192.168.20.0/24 的静态路由，下一跳 10.0.0.2，管理距离设为 200 作为备份路由。,configure terminal / ip route 192.168.20.0 255.255.255.0 10.0.0.2 200,"```
+configure terminal
+ip route 192.168.20.0 255.255.252.0 10.0.0.2 preference 200
+```",configure terminal / ip route 192.168.20.0 255.255.252.0 10.0.0.2 preference 200,c2: ^ip route 192\.168\.20\.0 (255\.255\.255\.0|24) 10\.0\.0\.2 200$,模型真错,掩码写成 255.255.252.0(/22)；preference 是华为关键字，思科直接跟数字,
+13,cs_diag_020,qwen2.5:1.5b,few_shot,cisco,diagnose,3,0.3333,c1|c3,E3_MISS,VLAN 10 的用户跨交换机无法通信，但同交换机内正常，请给出定位该问题最关键的三条查看命令。,show interfaces trunk / show vlan brief / show interfaces GigabitEthernet0/1 switchport,"```
+show ip int brief
+show vlan
+show interface
+```",show ip int brief / show vlan / show interface,c1: ^show interfaces trunk ⏎ c3: ^show interfaces? \S+ switchport,模型真错,跨交换机不通的关键是查 trunk，模型只给了泛化的 show interface,
+14,cs_iface_021,llama3.1:8b,syntax_hint,cisco,interface,1,0.5,c3,E3_MISS,清除 GigabitEthernet0/4 上已配置的接口描述，恢复为默认。,configure terminal / interface GigabitEthernet0/4 / no description,"```bash
+configure terminal
+interface GigabitEthernet0/4
+description """"
+exit
+end
+```","configure terminal / interface GigabitEthernet0/4 / description """" / exit / end",c3: ^no description$,模型真错,"思科清除描述用 no description，description """" 非法",
+15,hw_route_020,deepseek-r1:8b,zero_shot,huawei,routing,2,0.5,c3,E3_MISS,启动 BGP 进程，本端 AS 号 65001，与 10.0.0.2 建立 EBGP 邻居，对端 AS 号 65002。,system-view / bgp 65001 / peer 10.0.0.2 as-number 65002,"```shell
+system-view
+bgp 65001
+peer 10.0.0.2 as-number 65002 ebgp
+```",system-view / bgp 65001 / peer 10.0.0.2 as-number 65002 ebgp,c3: ^peer 10\.0\.0\.2 as-number 65002$,模型真错,VRP 的 peer X as-number Y 无 ebgp 后缀，多余关键字会报错（边界：待真机确认）,
+16,cs_iface_039,deepseek-r1:8b,zero_shot,cisco,interface,1,0.75,c1,E3_MISS,把 GigabitEthernet0/8 的 MTU 设为 1500。,configure terminal / interface GigabitEthernet0/8 / mtu 1500,"```ios
+interface GigabitEthernet0/8
+ mtu 1500
+end
+```",interface GigabitEthernet0/8 / mtu 1500 / end,c1: ^configure terminal$,模型真错,缺 configure terminal，按 D4 判失败,
+17,cs_vlan_044,qwen2.5:7b,zero_shot,cisco,vlan,2,0.0,c1|c2|c3,E3_MISS,在已配置为 trunk 的 GigabitEthernet0/12 上，把 VLAN 20 从放行列表中移除。,configure terminal / interface GigabitEthernet0/12 / switchport trunk allowed vlan remove 20,"```sql
+no switchport trunk allowed vlan 20
+```",no switchport trunk allowed vlan 20,c1: ^configure terminal$ ⏎ c2: ^interface gigabitethernet0/12$ ⏎ c3: ^switchport trunk allowed vlan remove 20$,模型真错,no switchport trunk allowed vlan 20 语义是恢复默认；且缺进入接口,
+18,hw_route_060,qwen2.5:3b,few_shot,huawei,routing,1,0.3333,c2,E0_FORMAT|E3_MISS,把 OSPF 进程 1 的 Router ID 指定为 1.1.1.1。,system-view / ospf 1 router-id 1.1.1.1,"system-view
+ospf 1
+router-id 1.1.1.1
+quit",system-view / ospf 1 / router-id 1.1.1.1 / quit,c2: ^ospf 1 router-id 1\.1\.1\.1$,需人工确认,华为 OSPF 视图下是否存在独立的 router-id 子命令。若存在则 c2 正则写窄了，属评分器误判,
+19,hw_iface_055,qwen2.5:1.5b,syntax_hint,huawei,interface,1,0.0,c1|c2|c3,E3_MISS,关闭 GigabitEthernet0/0/13 接口的速率双工自协商。,system-view / interface GigabitEthernet0/0/13 / undo negotiation auto,"```shell
+undo interface gigabitethernet 0/0/13
+```",undo interface gigabitethernet 0/0/13,c1: ^system-view$ ⏎ c2: ^interface gigabitethernet0/0/13$ ⏎ c3: ^undo negotiation auto$,模型真错,只写了 undo interface，未配 undo negotiation auto,
+20,hw_diag_009,llama3.1:8b,syntax_hint,huawei,diagnose,3,0.6667,c1,E3_MISS,两台华为交换机通过 trunk 口互联，VLAN 10 的用户之间无法通信，但 VLAN 20 正常。请给出定位该问题最关键的三条查看命令。,display port vlan / display vlan 10 / display interface GigabitEthernet0/0/24,"```bash
+display interface Eth-Trunk 1
+display vlan
+display interface Vlanif 10
+```",display interface Eth-Trunk 1 / display vlan / display interface Vlanif 10,c1: ^display (port vlan|current-configuration interface),模型真错,诊断方向偏了，未查 port vlan 或接口配置,
+21,hw_vlan_032,qwen2.5:3b,few_shot,huawei,vlan,1,0.3333,c2,E1_HALLUC|E3_MISS,删除已存在的 VLAN 40。,system-view / undo vlan 40,"```
+system-view
+delete vlan 40
+quit
+```",system-view / delete vlan 40 / quit,c2: ^undo vlan 40$,模型真错,delete vlan 非华为语法，应为 undo vlan,
+22,hw_iface_011,qwen2.5:3b,zero_shot,huawei,interface,2,0.8333,c1,E3_MISS,把 GigabitEthernet0/0/10 的速率固定为 100Mbps，双工模式固定为全双工。,system-view / interface GigabitEthernet0/0/10 / speed 100 / duplex full,"```
+interface GigabitEthernet0/0/10
+ speed 100
+ duplex full
+```",interface GigabitEthernet0/0/10 / speed 100 / duplex full,c1: ^system-view$,模型真错,缺 system-view，按 D4 判失败,
+23,hw_mpls_047,llama3.1:8b,syntax_hint,huawei,mpls,2,0.3333,c3|c4,E1_HALLUC|E3_MISS,在 GigabitEthernet0/0/1 接口上同时使能 MPLS 和 MPLS LDP。,system-view / interface GigabitEthernet0/0/1 / mpls / mpls ldp,"```bash
+system-view
+interface GigabitEthernet 0/0/1
+mpls enable
+mpls ldp enable
+undo shutdown
+commit
+```",system-view / interface GigabitEthernet 0/0/1 / mpls enable / mpls ldp enable / undo shutdown / commit,c3: ^mpls$ ⏎ c4: ^mpls ldp$,需人工确认,华为接口下使能 MPLS 是 mpls 还是 mpls enable，可能随 VRP 版本(V5/V8)不同,
+24,hw_route_037,llama3.1:8b,few_shot,huawei,routing,1,0.6667,c1,E3_MISS,删除已配置的静态路由：目的 192.168.20.0/24，下一跳 10.0.0.2。,system-view / undo ip route-static 192.168.20.0 255.255.255.0 10.0.0.2,"```
+ip route-static 192.168.20.0 255.255.255.0 10.0.0.2
+undo ip route-static 192.168.20.0 255.255.255.0 10.0.0.2
+```",ip route-static 192.168.20.0 255.255.255.0 10.0.0.2 / undo ip route-static 192.168.20.0 255.255.255.0 10.0.0.2,c1: ^system-view$,模型真错,缺 system-view，按 D4 判失败,
+25,hw_iface_011,qwen2.5:3b,syntax_hint,huawei,interface,2,0.6667,c1|c2,E3_MISS,把 GigabitEthernet0/0/10 的速率固定为 100Mbps，双工模式固定为全双工。,system-view / interface GigabitEthernet0/0/10 / speed 100 / duplex full,"```
+port link-type access
+port default vlan 10
+port trunk enable
+port trunk allow-pass vlan 10
+speed 100
+duplex full
+```",port link-type access / port default vlan 10 / port trunk enable / port trunk allow-pass vlan 10 / speed 100 / duplex full,c1: ^system-view$ ⏎ c2: ^interface gigabitethernet0/0/10$,模型真错,答非所问，配的是 VLAN 不是速率双工,
+26,hw_iface_055,qwen2.5:3b,syntax_hint,huawei,interface,1,0.25,c1|c3,E0_FORMAT|E1_HALLUC|E3_MISS,关闭 GigabitEthernet0/0/13 接口的速率双工自协商。,system-view / interface GigabitEthernet0/0/13 / undo negotiation auto,"[vrplib]
+[VRP System View] interface gigabitethernet 0/0/13
+[VRP-SG-GigabitEthernet0/0/13] port link-type access
+[VRP-SG-GigabitEthernet0/0/13] port default vlan 1
+[VRP-SG-GigabitEthernet0/0/13] quit",[vrplib] / [VRP System View] interface gigabitethernet 0/0/13 / [VRP-SG-GigabitEthernet0/0/13] port link-type access / [VRP-SG-GigabitEthernet0/0/13] port default vlan 1 / [VRP-SG-GigabitEthernet0/0/13] quit,c1: ^system-view$ ⏎ c3: ^undo negotiation auto$,模型真错,输出带设备提示符且答非所问,
+27,hw_route_059,llama3.1:8b,syntax_hint,huawei,routing,2,0.3333,c2,E3_MISS,配置一条到 10.30.0.0/16 的静态路由，下一跳 10.0.0.5，并为该路由添加描述 to-branch。,system-view / ip route-static 10.30.0.0 255.255.0.0 10.0.0.5 description to-branch,"```bash
+system-view
+ip route-static 10.30.0.0 255.255.0.0 10.0.0.5 description ""to-branch""
+undo ip route-static 10.30.0.0 255.255.0.0
+quit
+display ip routing-table
+```","system-view / ip route-static 10.30.0.0 255.255.0.0 10.0.0.5 description ""to-branch"" / undo ip route-static 10.30.0.0 255.255.0.0 / quit / display ip routing-table",c2: ^ip route-static 10\.30\.0\.0 (255\.255\.0\.0|16) 10\.0\.0\.5 description to-branch$,评分器误判,"description ""to-branch"" 带引号未被归一化剥除；实务上等价于 to-branch",
+28,cs_route_015,deepseek-r1:8b,zero_shot,cisco,routing,2,0.6667,c1,E3_MISS,配置一条到 172.16.0.0/16 的静态路由，出接口为 GigabitEthernet0/1。,configure terminal / ip route 172.16.0.0 255.255.0.0 GigabitEthernet0/1,"```ios
+ip route 172.16.0.0 16 GigabitEthernet0/1
+```",ip route 172.16.0.0 16 GigabitEthernet0/1,c1: ^configure terminal$,模型真错,缺 configure terminal，按 D4 判失败,
+29,cs_diag_034,qwen2.5:1.5b,few_shot,cisco,diagnose,3,0.3333,c2|c3,E3_MISS,已应用的 ACL 没有起到过滤效果，请给出定位该问题最关键的三条查看命令。,show access-lists 100 / show ip interface GigabitEthernet0/1 / show running-config interface GigabitEthernet0/1,"```
+show access-lists
+show ip access-group acl100 interface <interface_name>
+```",show access-lists / show ip access-group acl100 interface <interface_name>,c2: ^show ip interface ⏎ c3: ^show (running-config|startup-config),模型真错,只给两条且含占位符 <interface_name>,
+30,cs_route_046,qwen2.5:1.5b,few_shot,cisco,routing,1,0.3333,c2,E3_MISS,配置一条默认路由，出接口为 GigabitEthernet0/1，管理距离设为 250。,configure terminal / ip route 0.0.0.0 0.0.0.0 GigabitEthernet0/1 250,"```
+configure terminal
+ip default-gateway <你的路由器IP地址>
+exit
+interface GigabitEthernet0/1
+ip address <你的子网掩码>
+no shutdown
+```",configure terminal / ip default-gateway <你的路由器IP地址> / exit / interface GigabitEthernet0/1 / ip address <你的子网掩码> / no shutdown,c2: ^ip route 0\.0\.0\.0 0\.0\.0\.0 gigabitethernet0/1 250$,模型真错,答成 ip default-gateway 且全是占位符,
+31,cs_iface_009,deepseek-r1:8b,zero_shot,cisco,interface,1,0.75,c1,E3_MISS,创建 Loopback 0 接口，并配置地址 2.2.2.2，掩码 255.255.255.255。,configure terminal / interface Loopback 0 / ip address 2.2.2.2 255.255.255.255,"```ios
+interface Loopback0
+ ip address 2.2.2.2 255.255.255.255
+ no shutdown
+end
+```",interface Loopback0 / ip address 2.2.2.2 255.255.255.255 / no shutdown / end,c1: ^configure terminal$,模型真错,缺 configure terminal，按 D4 判失败,
+32,cs_iface_040,qwen2.5:3b,syntax_hint,cisco,interface,2,0.8,c3,E3_MISS,创建 Port-channel 3 接口，并把 GigabitEthernet0/9 以 LACP 主动模式加入该聚合组。,configure terminal / interface Port-channel 3 / exit / interface GigabitEthernet0/9 / channel-group 3 mode active,"```
+configure terminal
+interface port-channel 3
+switchport mode trunk
+no shutdown
+channel-group 3 mode active
+exit
+show interface port-channel 3
+```",configure terminal / interface port-channel 3 / switchport mode trunk / no shutdown / channel-group 3 mode active / exit / show interface port-channel 3,c3: ^interface gigabitethernet0/9$,模型真错,未进入 GigabitEthernet0/9，直接在 port-channel 下 channel-group，逻辑错,
+33,hw_route_017,qwen2.5:1.5b,syntax_hint,huawei,routing,2,0.0,c1|c2,E2_VENDOR|E3_MISS,配置一条到 192.168.20.0/24 的静态路由，下一跳 10.0.0.2，优先级设为 100 作为备份路由。,system-view / ip route-static 192.168.20.0 255.255.255.0 10.0.0.2 preference 100,"```shell
+ip route static 192.168.20.0 255.255.255.0 10.0.0.2 preference 100
+```
+
+```shell
+ip route static 192.168.20.0 255.255.255.0 10.0.0.2
+```",ip route static 192.168.20.0 255.255.255.0 10.0.0.2 preference 100 / ip route static 192.168.20.0 255.255.255.0 10.0.0.2,c1: ^system-view$ ⏎ c2: ^ip route-static 192\.168\.20\.0 (255\.255\.255\.0|24) 10\.0\.0\.2 preference 100$,模型真错,ip route static 缺连字符，应为 ip route-static,
+34,hw_vlan_014,qwen2.5:3b,zero_shot,huawei,vlan,2,0.6,c1|c3,E3_MISS,创建 VLAN 100，并为其配置三层管理地址 192.168.100.1/24。,system-view / vlan 100 / quit / interface Vlanif 100 / ip address 192.168.100.1 255.255.255.0,"```
+vlan 100
+ip address 192.168.100.1 255.255.255.0
+```",vlan 100 / ip address 192.168.100.1 255.255.255.0,c1: ^system-view$ ⏎ c3: ^interface vlanif100$,模型真错,未创建 Vlanif 接口，直接在 vlan 视图下配 IP,
+35,cs_iface_009,qwen2.5:1.5b,zero_shot,cisco,interface,1,0.75,c1,E3_MISS,创建 Loopback 0 接口，并配置地址 2.2.2.2，掩码 255.255.255.255。,configure terminal / interface Loopback 0 / ip address 2.2.2.2 255.255.255.255,"```shell
+interface loopback 0
+ip address 2.2.2.2 255.255.255.255
+```
+
+执行此命令后，路由器的 Loopback 0 接口将被创建，并且其地址为 2.2.2.2，掩码为 255.255.255.255。",interface loopback 0 / ip address 2.2.2.2 255.255.255.255,c1: ^configure terminal$,模型真错,缺 configure terminal，按 D4 判失败,
+36,hw_trunk_006,qwen2.5-coder:7b,few_shot,huawei,interface,2,0.3333,c1|c2|c5,E3_MISS,创建 Eth-Trunk 1 并配置为 LACP 静态模式，把 GigabitEthernet0/0/1 和 GigabitEthernet0/0/2 加入该聚合组。,system-view / interface Eth-Trunk 1 / mode lacp-static / quit / interface GigabitEthernet0/0/1 / eth-trunk 1 / quit / interface GigabitEthernet0/0/2 / eth-trunk 1,"```
+system-view
+interface Bridge-Aggregation 1
+mode static-lacp
+quit
+interface GigabitEthernet0/0/1
+port link-aggregation group 1
+quit
+interface GigabitEthernet0/0/2
+port link-aggregation group 1
+quit
+```",system-view / interface Bridge-Aggregation 1 / mode static-lacp / quit / interface GigabitEthernet0/0/1 / port link-aggregation group 1 / quit / interface GigabitEthernet0/0/2 / port link-aggregation group 1 / quit,c1: ^interface eth-trunk 1$ ⏎ c2: ^mode lacp-static$ ⏎ c5: ^eth-trunk 1$,模型真错,Bridge-Aggregation / port link-aggregation group 是 H3C 语法，两家特征词都抓不到,
+37,hw_route_040,qwen2.5:3b,zero_shot,huawei,routing,2,0.0,c1|c2|c3,E3_MISS,在 BGP 进程（AS 65001）中引入直连路由。,system-view / bgp 65001 / import-route direct,"```
+ip route-static 0.0.0.0 0.0.0.0 Loopback0
+import-route static
+```",ip route-static 0.0.0.0 0.0.0.0 Loopback0 / import-route static,c1: ^system-view$ ⏎ c2: ^bgp 65001$ ⏎ c3: ^import-route direct$,模型真错,答非所问，未进 BGP 进程,
+38,hw_mpls_049,llama3.1:8b,syntax_hint,huawei,mpls,2,0.6667,c3,E1_HALLUC|E3_MISS|E7_UNSAFE,把 GigabitEthernet0/0/2 绑定到 VPN 实例 VPNA，并配置地址 10.1.1.1/24。,system-view / interface GigabitEthernet0/0/2 / ip binding vpn-instance VPNA / ip address 10.1.1.1 255.255.255.0,"```bash
+system-view
+interface GigabitEthernet0/0/2
+port link-type access
+port default vlan 100
+ip address 10.1.1.1 255.255.255.0
+mpls lsr-id 10.1.1.1
+vpn-instance VPNA
+mpls vpn instance-binding interface GigabitEthernet0/0/2
+undo port link-type access
+undo ip address 10.1.1.1 255.255.255.0
+undo mpls lsr-id 10.1.1.1
+undo vpn-instance VPNA
+undo mpls vpn instance-binding interface GigabitEthernet0/0/2
+```",system-view / interface GigabitEthernet0/0/2 / port link-type access / port default vlan 100 / ip address 10.1.1.1 255.255.255.0 / mpls lsr-id 10.1.1.1 / vpn-instance VPNA / mpls vpn instance-binding interface GigabitEthernet0/0/2 / undo port link-type access / undo ip address 10.1.1.1 255.255.255.0 / undo mpls lsr-id 10.1.1.1 / undo vpn-instance VPNA / undo mpls vpn instance-binding interface GigabitEthernet0/0/2,c3: ^ip binding vpn-instance vpna$,模型真错,mpls vpn instance-binding 非 VRP 语法，应为接口下 ip binding vpn-instance,
+39,hw_vlan_015,llama3.1:8b,syntax_hint,huawei,vlan,2,0.6,c4,E3_MISS,把 GigabitEthernet0/0/24 这个 trunk 口的 PVID 修改为 VLAN 10。,system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk pvid vlan 10,"```bash
+system-view
+interface GigabitEthernet0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10
+undo port default vlan
+quit
+display current-configuration
+```",system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk allow-pass vlan 10 / undo port default vlan / quit / display current-configuration,c4: ^port trunk pvid vlan 10$,模型真错,配的是 allow-pass 而非 pvid，未修改 PVID,
+40,hw_diag_067,qwen2.5:3b,syntax_hint,huawei,diagnose,3,0.6667,c2,E3_MISS,设备 CPU 占用率持续偏高，请给出定位该问题最关键的三条查看命令。,display cpu-usage / display memory-usage / display interface brief,"```
+display cpu-usage
+display device | include CPU
+display interface gigabitethernet 1/0/1
+```",display cpu-usage / display device | include CPU / display interface gigabitethernet 1/0/1,c2: ^display (memory-usage|memory),模型真错,display device | include CPU 看不到内存，少了一个诊断方向,
+41,hw_acl_023,qwen2.5:1.5b,zero_shot,huawei,acl,2,0.0,c1|c2|c3,E1_HALLUC|E2_VENDOR|E3_MISS,创建高级 ACL 3000，拒绝源网段 192.168.1.0/24 访问 Telnet 服务（TCP 23 端口）。,system-view / acl number 3000 / rule 5 deny tcp source 192.168.1.0 0.0.0.255 destination-port eq 23,"```bash
+ip access-list advanced 3000
+rule 10 permit tcp 192.168.1.0 0.0.0.255 eq 23
+exit
+```
+
+解释：
+- `ip access-list advanced 3000` 创建一个高级 ACL，编号为 3000。
+- `rule 10 permit tcp 192.168.1.0 0.0.0.255 eq 23` 拒绝源网段 192.168.1.0/24 访问 Telnet 服务（TCP 23 端口）。",ip access-list advanced 3000 / rule 10 permit tcp 192.168.1.0 0.0.0.255 eq 23 / exit,c1: ^system-view$ ⏎ c2: ^acl (number )?3000$ ⏎ c3: ^rule( \d+)? deny tcp source 192\.168\.1\.0 0\.0\.0\.255( destination any)? destination-port eq (23|telnet)$,模型真错,ip access-list advanced 混合语法，且 permit 与题目要求的 deny 相反,
+42,hw_vlan_015,llama3.1:8b,zero_shot,huawei,vlan,2,0.6,c4,E1_HALLUC|E3_MISS,把 GigabitEthernet0/0/24 这个 trunk 口的 PVID 修改为 VLAN 10。,system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk pvid vlan 10,"```bash
+system-view
+interface gigabitethernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10
+default vlan pvid 10
+quit
+save
+```",system-view / interface gigabitethernet 0/0/24 / port link-type trunk / port trunk allow-pass vlan 10 / default vlan pvid 10 / quit / save,c4: ^port trunk pvid vlan 10$,模型真错,default vlan pvid 非华为语法,
+43,cs_iface_041,qwen2.5:1.5b,syntax_hint,cisco,interface,1,0.5,c1|c2,E3_MISS,给 GigabitEthernet0/10 添加接口描述 To-Firewall。,configure terminal / interface GigabitEthernet0/10 / description To-Firewall,"```shell
+no switchport
+switchport access vlan 10
+description To-Firewall
+```",no switchport / switchport access vlan 10 / description To-Firewall,c1: ^configure terminal$ ⏎ c2: ^interface gigabitethernet0/10$,模型真错,缺 configure terminal 与进入接口,
+44,hw_iface_054,qwen2.5:1.5b,few_shot,huawei,interface,2,0.25,c1|c3,E3_MISS,创建 Eth-Trunk 3，并把工作模式设为 LACP 静态聚合。,system-view / interface Eth-Trunk 3 / mode lacp-static,"```
+interface eth-trunk 3
+undo portswitch
+eth-trunk mode lacp-static
+```",interface eth-trunk 3 / undo portswitch / eth-trunk mode lacp-static,c1: ^system-view$ ⏎ c3: ^mode lacp(-static)?$,模型真错,eth-trunk mode lacp-static 语法错，应为 mode lacp-static,
+45,hw_iface_001,qwen2.5:1.5b,few_shot,huawei,interface,1,0.75,c1,E3_MISS,把 GigabitEthernet0/0/1 的 IP 地址配置为 192.168.10.1，掩码 255.255.255.0。,system-view / interface GigabitEthernet0/0/1 / ip address 192.168.10.1 255.255.255.0,"```
+interface GigabitEthernet0/0/1
+ip address 192.168.10.1 255.255.255.0
+```",interface GigabitEthernet0/0/1 / ip address 192.168.10.1 255.255.255.0,c1: ^system-view$,模型真错,缺 system-view，按 D4 判失败,
+46,hw_acl_023,deepseek-r1:8b,few_shot,huawei,acl,2,1.0,,E0_FORMAT|E1_HALLUC,创建高级 ACL 3000，拒绝源网段 192.168.1.0/24 访问 Telnet 服务（TCP 23 端口）。,system-view / acl number 3000 / rule 5 deny tcp source 192.168.1.0 0.0.0.255 destination-port eq 23,"```
+system-view
+acl number 3000
+rule 5 deny tcp source 192.168.1.0 0.0.0.255 destination-port eq 23
+`高亮",``` / system-view / acl number 3000 / rule 5 deny tcp source 192.168.1.0 0.0.0.255 destination-port eq 23,,模型真错,代码块围栏未闭合(结尾为 `高亮)，按 D1 格式不合规判失败。内容本身完全正确,
+47,cs_mpls_035,qwen2.5:7b,zero_shot,cisco,mpls,2,0.4,c1|c3,E3_MISS,全局启用 MPLS 转发，并把标签分发协议指定为 LDP。,configure terminal / mpls ip / mpls label protocol ldp,"```markdown
+mpls
+mpls ldp
+mpls ip
+router mpls ldp
+```",mpls / mpls ldp / mpls ip / router mpls ldp,c1: ^configure terminal$ ⏎ c3: ^mpls label protocol ldp$,模型真错,未写 mpls label protocol ldp,
+48,hw_diag_044,qwen2.5:1.5b,few_shot,huawei,diagnose,3,0.0,c1|c2|c3,E1_HALLUC|E2_VENDOR|E3_MISS,已应用的 ACL 没有起到过滤效果，请给出定位该问题最关键的三条查看命令。,display acl 3000 / display traffic-filter applied-record / display current-configuration interface GigabitEthernet0/0/1,"```
+acl number 3000
+traffic-filter outbound
+show traffic-filter summary
+```",acl number 3000 / traffic-filter outbound / show traffic-filter summary,c1: ^display acl ⏎ c2: ^display traffic-filter ⏎ c3: ^display (current-configuration|this|interface),模型真错,给的是配置命令与思科 show，非华为 display 查看命令,
+49,cs_iface_003,qwen2.5-coder:7b,zero_shot,cisco,interface,1,0.7778,c1,E3_MISS,把 GigabitEthernet0/2 的接口描述配置为 To-Server，并确保该接口处于开启状态。,configure terminal / interface GigabitEthernet0/2 / description To-Server / no shutdown,"```
+interface GigabitEthernet0/2
+ description To-Server
+ no shutdown
+```",interface GigabitEthernet0/2 / description To-Server / no shutdown,c1: ^configure terminal$,模型真错,缺 configure terminal，按 D4 判失败,
+50,hw_vlan_015,qwen2.5:1.5b,few_shot,huawei,vlan,2,0.2,c1|c3|c4,E1_HALLUC|E2_VENDOR|E3_MISS,把 GigabitEthernet0/0/24 这个 trunk 口的 PVID 修改为 VLAN 10。,system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk pvid vlan 10,"```
+interface GigabitEthernet0/0/24
+switchport mode access
+switchport access vlan 10
+```",interface GigabitEthernet0/0/24 / switchport mode access / switchport access vlan 10,c1: ^system-view$ ⏎ c3: ^port link-type trunk$ ⏎ c4: ^port trunk pvid vlan 10$,模型真错,思科 switchport 语法，且未配 trunk 与 pvid,
+51,cs_diag_033,llama3.1:8b,few_shot,cisco,diagnose,3,0.0,c1|c2|c3,E3_MISS,VLAN 10 与 VLAN 20 的用户之间无法互通，请给出定位该问题最关键的三条查看命令。,show ip route / show ip interface brief / show arp,"```
+show ip int brief
+show vlan
+show run | i interface Vlan 10
+```",show ip int brief / show vlan / show run | i interface Vlan 10,c1: ^show ip route ⏎ c2: ^show (ip interface brief|interfaces? vlan) ⏎ c3: ^show (arp|ip arp|mac address-table),评分器误判,show ip int brief 是思科合法缩写；归一化只展开首 token，int 在第三位未被展开,
+52,hw_diag_044,qwen2.5:1.5b,syntax_hint,huawei,diagnose,3,0.6667,c2,E1_HALLUC|E2_VENDOR|E3_MISS,已应用的 ACL 没有起到过滤效果，请给出定位该问题最关键的三条查看命令。,display acl 3000 / display traffic-filter applied-record / display current-configuration interface GigabitEthernet0/0/1,"```shell
+display acl 3000
+show access-list
+display interface
+```",display acl 3000 / show access-list / display interface,c2: ^display traffic-filter,模型真错,未查 traffic-filter，且混用了思科 show,
+53,hw_route_020,llama3.1:8b,zero_shot,huawei,routing,2,0.0,c1|c2|c3,E1_HALLUC|E3_MISS,启动 BGP 进程，本端 AS 号 65001，与 10.0.0.2 建立 EBGP 邻居，对端 AS 号 65002。,system-view / bgp 65001 / peer 10.0.0.2 as-number 65002,"```bash
+bgp enable
+network 10.0.0.1/32
+neighbor 10.0.0.2 remote-as 65002
+```",bgp enable / network 10.0.0.1/32 / neighbor 10.0.0.2 remote-as 65002,c1: ^system-view$ ⏎ c2: ^bgp 65001$ ⏎ c3: ^peer 10\.0\.0\.2 as-number 65002$,模型真错,bgp enable / neighbor remote-as 是思科语法,
+54,hw_trunk_006,qwen2.5:1.5b,few_shot,huawei,interface,2,0.1667,c2|c3|c4|c5,E0_FORMAT|E1_HALLUC|E2_VENDOR|E3_MISS,创建 Eth-Trunk 1 并配置为 LACP 静态模式，把 GigabitEthernet0/0/1 和 GigabitEthernet0/0/2 加入该聚合组。,system-view / interface Eth-Trunk 1 / mode lacp-static / quit / interface GigabitEthernet0/0/1 / eth-trunk 1 / quit / interface GigabitEthernet0/0/2 / eth-trunk 1,"```
+interface eth-trunk 1
+undo port link-type manual
+undo port default-vlan 1
+channel-group 1 mode static
+undo port trunk allow-pass vlan all
+undo port trunk allow-pass vlan 1-4094
+undo port trunk native vlan 1
+undo port trunk native vlan 256
+undo port trunk native vlan 32768
+undo port trunk native vlan 4096
+undo port trunk native vlan 8192
+undo port trunk native vlan 16384
+undo port trunk native vlan 32768
+undo port trunk native vlan 65536
+undo port trunk native vlan 131072
+undo port trunk native vlan 262144
+undo port trunk native vlan 524288
+undo port trunk native vlan 1048576
+undo port trunk native vlan 2097152
+undo port trunk native vlan 4194304
+undo port trunk native vlan 8388608
+undo port trunk native vlan 16777216
+undo port trunk native vlan 33554432
+undo port trunk native vlan 6710",``` / interface eth-trunk 1 / undo port link-type manual / undo port default-vlan 1 / channel-group 1 mode static / undo port trunk allow-pass vlan all / undo port trunk allow-pass vlan 1-4094 / undo port trunk native vlan 1 / undo port trunk native vlan 256 / undo port trunk native vlan 32768 / undo port trunk native vlan 4096 / undo port trunk native vlan 8192 / undo port trunk native vlan 16384 / undo port trunk native vlan 32768 / undo port trunk native vlan 65536 / undo port trunk native vlan 131072 / undo port trunk native vlan 262144 / undo port trunk native vlan 524288 / undo port trunk native vlan 1048576 / undo port trunk native vlan 2097152 / undo port trunk native vlan 4194304 / undo port trunk native vlan 8388608 / undo port trunk native vlan 16777216 / undo port trunk native vlan 33554432 / undo port trunk native vlan 67108864 / undo port trunk native vlan 134217728 / undo port trunk native vlan 268435456 / undo port trunk native vlan 536870912 / undo port trunk native vlan 1073741824 / undo port trunk native vlan 2147483648 / undo port trunk native vlan 4294967296 / undo port trunk native vlan 8589934592 / undo port trunk native vlan 17179869104 / undo port trunk native vlan 34576230320 / undo port trunk native vlan 69132460640 / undo port trunk native vlan 138264921280 / undo port trunk native vlan 276529842560 / undo port trunk native vlan 553059687840 / undo port trunk native vlan 1106119375680 / undo port trunk native vlan 2212238751360 / undo port trunk native vlan 4424477502720 / undo port trunk native vlan 8848955005440 / undo port trunk native vlan 17697910010880 / undo port trunk native vlan 35395820021760 / undo port trunk native vlan 70791640043520 / undo port trunk native vlan 141583280087040 / undo port trunk native vlan 283166560174080 / undo port trunk native vlan 566332720348160 / undo port trunk native vlan 113266544069600 / undo port trunk native vlan 226533088139200 / undo port trunk native vlan 45,c2: ^mode lacp-static$ ⏎ c3: ^interface gigabitethernet0/0/1$ ⏎ c4: ^interface gigabitethernet0/0/2$ ⏎ c5: ^eth-trunk 1$,模型真错,输出崩溃，无限重复 undo port trunk native vlan,
+55,cs_diag_020,qwen2.5:3b,few_shot,cisco,diagnose,3,0.0,c1|c2|c3,E3_MISS,VLAN 10 的用户跨交换机无法通信，但同交换机内正常，请给出定位该问题最关键的三条查看命令。,show interfaces trunk / show vlan brief / show interfaces GigabitEthernet0/1 switchport,"```
+show interfaces vlan 10
+show interface trunk
+show ip route
+```",show interfaces vlan 10 / show interface trunk / show ip route,c1: ^show interfaces trunk ⏎ c2: ^show vlan ⏎ c3: ^show interfaces? \S+ switchport,评分器误判,show interface trunk 是思科合法写法(单复数均可)，正则 ^show interfaces trunk 写死了复数,
+56,cs_route_045,qwen2.5:7b,few_shot,cisco,routing,2,0.5,c3,E3_MISS,把 OSPF 进程 1 的 Router ID 指定为 1.1.1.1。,configure terminal / router ospf 1 / router-id 1.1.1.1,"```
+configure terminal
+router ospf 1
+ip router-id 1.1.1.1
+```",configure terminal / router ospf 1 / ip router-id 1.1.1.1,c3: ^router-id 1\.1\.1\.1$,模型真错,ip router-id 非思科语法，OSPF 视图下应为 router-id,
+57,cs_iface_021,llama3.1:8b,zero_shot,cisco,interface,1,0.5,c3,E3_MISS,清除 GigabitEthernet0/4 上已配置的接口描述，恢复为默认。,configure terminal / interface GigabitEthernet0/4 / no description,"```bash
+configure terminal
+interface gigabitethernet0/4
+description """"
+exit
+```","configure terminal / interface gigabitethernet0/4 / description """" / exit",c3: ^no description$,模型真错,"description """" 无法清除描述，应为 no description",
+58,hw_diag_025,qwen2.5:1.5b,few_shot,huawei,diagnose,3,0.3333,c2|c3,E3_MISS,GigabitEthernet0/0/1 接口状态显示为 down，请给出定位该问题最关键的三条查看命令。,display interface GigabitEthernet0/0/1 / display interface brief / display current-configuration interface GigabitEthernet0/0/1,"```
+display interface GigabitEthernet 0/0/1
+```",display interface GigabitEthernet 0/0/1,c2: ^display (interface brief|ip interface brief|device) ⏎ c3: ^display (current-configuration|this),模型真错,只给了一条命令，题目要求三条,
+59,cs_vlan_013,deepseek-r1:8b,syntax_hint,cisco,vlan,2,0.8,c3,E3_MISS,把 GigabitEthernet0/1 这个 trunk 口的 native VLAN 修改为 VLAN 99。,configure terminal / interface GigabitEthernet0/1 / switchport mode trunk / switchport trunk native vlan 99,"```plaintext
+configure terminal
+interface GigabitEthernet0/1
+switchport trunk native vlan 99
+```",configure terminal / interface GigabitEthernet0/1 / switchport trunk native vlan 99,c3: ^switchport mode trunk$,题目有问题,题干已声明该口是 trunk 口，标答仍要求重配 switchport mode trunk。模型只改 native vlan 是正确做法,
+60,hw_vlan_005,qwen2.5:3b,few_shot,huawei,vlan,2,1.0,,E0_FORMAT,把 GigabitEthernet0/0/24 配置为 trunk 口，允许 VLAN 10 和 VLAN 20 通过。,system-view / interface GigabitEthernet0/0/24 / port link-type trunk / port trunk allow-pass vlan 10 20,"system-view
+interface GigabitEthernet 0/0/24
+port link-type trunk
+port trunk allow-pass vlan 10 20
+quit",system-view / interface GigabitEthernet 0/0/24 / port link-type trunk / port trunk allow-pass vlan 10 20 / quit,,模型真错,未使用代码块，按 D1 格式不合规判失败。内容本身完全正确,

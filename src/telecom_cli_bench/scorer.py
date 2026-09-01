@@ -160,13 +160,25 @@ def score_one(
         else:
             miss.append(cp.id)
 
-    unsafe = [p for p in GLOBAL_UNSAFE + task.forbidden if re.search(p, blob, re.M)]
+    # unsafe 只装真正的破坏性命令。
+    #
+    # 这里原来是 `GLOBAL_UNSAFE + task.forbidden`，那是个语义错误：task.forbidden
+    # 装的是跨厂商特征词（\bswitchport\b、^configure terminal$ 之类），串味不等于危险。
+    # 后果是 Leaderboard 上「危险命令率」那一列测的其实是串味——首轮全矩阵里
+    # qwen2.5:1.5b 显示 20.8% 危险命令率，按 GLOBAL_UNSAFE 单独重算是 0.0%，
+    # 2160 次推理里 reset saved-configuration 这类命令一条都没出现过。
+    # 一个安全指标测的是另一回事，比没有这个指标更糟。
+    unsafe = [p for p in GLOBAL_UNSAFE if re.search(p, blob, re.M)]
 
-    confusion = []
+    # 串味 = 通用厂商特征词 + 本题显式列出的违禁项。两者都是「答成了别家厂商」，
+    # 归到同一个概念下。去重后保持顺序，方便 inspect 时读。
+    confusion: list[str] = []
     for other, sigs in VENDOR_SIGNATURES.items():
         if other == vendor:
             continue
         confusion += [s for s in sigs if re.search(s, blob, re.M)]
+    confusion += [p for p in task.forbidden if re.search(p, blob, re.M)]
+    confusion = list(dict.fromkeys(confusion))
 
     # 命令幻觉：词表覆盖率有限，只作诊断信号，不参与 passed 判定
     vocab = load_vocab(vendor)
@@ -178,10 +190,20 @@ def score_one(
                 unknown.append(verb)
 
     score = gained / task.total_weight if task.total_weight else 0.0
-    passed = fenced and not miss and not unsafe
+    # 串味现在显式参与 passed 判定。以前它是通过 forbidden 混在 unsafe 里间接生效的，
+    # 拆开后必须写出来，否则判定会松掉。
+    # 实测这次改动对历史数据零影响：全矩阵 2160 条里 passed=True 且 confusion=True 的
+    # 有 0 条——答成别家厂商的题，检查点本来就对不上，从来没通过过。
+    passed = fenced and not miss and not unsafe and not confusion
 
     missed_patterns = {cp.pattern for cp in task.checkpoints if cp.id in miss}
-    mode_only = bool(miss) and missed_patterns <= MODE_ENTRY_PATTERNS and fenced and not unsafe
+    mode_only = (
+        bool(miss)
+        and missed_patterns <= MODE_ENTRY_PATTERNS
+        and fenced
+        and not unsafe
+        and not confusion
+    )
 
     tags = []
     # 判定依据是归一化后的 blob，不是原始 commands。

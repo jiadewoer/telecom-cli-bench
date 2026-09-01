@@ -13,3 +13,8 @@
 *.jpg binary
 *.gif binary
 *.pdf binary
+
+# PowerShell 5.1 按系统 ANSI（中文机器上是 GBK）解码 .ps1，没有 BOM 的话
+# 中文注释与 Write-Host 输出全是乱码。这类文件按二进制处理，
+# 避免任何行尾或编码转换动到 BOM。
+*.ps1 -text

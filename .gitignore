@@ -9,3 +9,6 @@ dist/
 build/
 .coverage
 results/manual_review.csv
+
+results/raw/
+results/scored/
