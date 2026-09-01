@@ -85,7 +85,7 @@ no switchport trunk allowed vlan 20
 18,hw_route_060,qwen2.5:3b,few_shot,huawei,routing,1,0.3333,c2,E0_FORMAT|E3_MISS,把 OSPF 进程 1 的 Router ID 指定为 1.1.1.1。,system-view / ospf 1 router-id 1.1.1.1,"system-view
 ospf 1
 router-id 1.1.1.1
-quit",system-view / ospf 1 / router-id 1.1.1.1 / quit,c2: ^ospf 1 router-id 1\.1\.1\.1$,需人工确认,华为 OSPF 视图下是否存在独立的 router-id 子命令。若存在则 c2 正则写窄了，属评分器误判,
+quit",system-view / ospf 1 / router-id 1.1.1.1 / quit,c2: ^ospf 1 router-id 1\.1\.1\.1$,模型真错,华为 OSPF 视图下是否存在独立的 router-id 子命令。若存在则 c2 正则写窄了，属评分器误判｜已定案（外部证据）：查华为 VRP 官方文档，router-id 在 ospf 进程命令行上给出，OSPF 视图下不存在独立的 router-id 子命令，标答与 c2 正则均正确，判为模型真错,
 19,hw_iface_055,qwen2.5:1.5b,syntax_hint,huawei,interface,1,0.0,c1|c2|c3,E3_MISS,关闭 GigabitEthernet0/0/13 接口的速率双工自协商。,system-view / interface GigabitEthernet0/0/13 / undo negotiation auto,"```shell
 undo interface gigabitethernet 0/0/13
 ```",undo interface gigabitethernet 0/0/13,c1: ^system-view$ ⏎ c2: ^interface gigabitethernet0/0/13$ ⏎ c3: ^undo negotiation auto$,模型真错,只写了 undo interface，未配 undo negotiation auto,
@@ -111,7 +111,7 @@ mpls enable
 mpls ldp enable
 undo shutdown
 commit
-```",system-view / interface GigabitEthernet 0/0/1 / mpls enable / mpls ldp enable / undo shutdown / commit,c3: ^mpls$ ⏎ c4: ^mpls ldp$,需人工确认,华为接口下使能 MPLS 是 mpls 还是 mpls enable，可能随 VRP 版本(V5/V8)不同,
+```",system-view / interface GigabitEthernet 0/0/1 / mpls enable / mpls ldp enable / undo shutdown / commit,c3: ^mpls$ ⏎ c4: ^mpls ldp$,题目有问题,华为接口下使能 MPLS 是 mpls 还是 mpls enable，可能随 VRP 版本(V5/V8)不同｜已定案（外部证据）：查华为官方文档，V5(AR 系列)为 mpls，V8(NE/CE 系列)为 mpls enable。本题 context 写的是 NE20（V8 平台），标答却用了 V5 语法，属出题错误。已按 D21 的 B+C 方案修正，并拆出受控对照题 hw_mpls_069 / hw_mpls_070,
 24,hw_route_037,llama3.1:8b,few_shot,huawei,routing,1,0.6667,c1,E3_MISS,删除已配置的静态路由：目的 192.168.20.0/24，下一跳 10.0.0.2。,system-view / undo ip route-static 192.168.20.0 255.255.255.0 10.0.0.2,"```
 ip route-static 192.168.20.0 255.255.255.0 10.0.0.2
 undo ip route-static 192.168.20.0 255.255.255.0 10.0.0.2
