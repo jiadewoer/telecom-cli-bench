@@ -1,135 +1,286 @@
-"""命令行入口：tcb validate / tcb run / tcb score / tcb report"""
+"""CLI entry point: tcb validate / run / check-raw / score / inspect / report."""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 import typer
 from rich.console import Console
 
-from .runner import run_model
+from .paths import IMAGE_DIR, PROJECT_ROOT, PROMPT_DIR, RAW_DIR, SCORE_DIR, SCRIPT_DIR, TASK_DIR
+from .runner import (
+    EndpointPreflightError,
+    InferenceRunError,
+    get_base_url,
+    inspect_raw_file,
+    preflight_endpoint,
+    run_model,
+)
 from .schema import load_tasks
 from .scorer import score_one
 
 app = typer.Typer(add_completion=False)
 console = Console()
 
-TASK_DIR = Path("data/tasks")
-PROMPT_DIR = Path("configs/prompts")
-RAW_DIR = Path("results/raw")
-SCORE_DIR = Path("results/scored")
+
+def _infra_row(row: dict) -> bool:
+    output = row.get("output", "")
+    return row.get("status", "ok") != "ok" or (
+        isinstance(output, str) and output.startswith("__ERROR__")
+    )
 
 
 @app.command()
 def validate() -> None:
-    """数据集自检（等价于 python scripts/validate_dataset.py）。"""
-    import subprocess
-    import sys
-
-    raise typer.Exit(subprocess.call([sys.executable, "scripts/validate_dataset.py"]))
+    """Run dataset self-check from any current working directory."""
+    script = SCRIPT_DIR / "validate_dataset.py"
+    raise typer.Exit(subprocess.call([sys.executable, str(script)], cwd=PROJECT_ROOT))
 
 
 @app.command()
-def run(model: str, prompt: str = "zero_shot", concurrency: int = 1) -> None:
-    # 这里的默认值会覆盖 run_model 的默认值，两处必须一致。
-    # 曾经 cli 是 2、runner 是 1，外层静默生效，导致我以为自己在测并发 1 的表现。
-    """跑一个模型 × 一套提示词。"""
+def run(
+    model: str,
+    prompt: str = "zero_shot",
+    concurrency: int = 1,
+    base_url: str | None = typer.Option(
+        None,
+        "--base-url",
+        help="OpenAI-compatible Ollama base URL; defaults to TCB_BASE_URL or localhost:11434.",
+    ),
+    trust_env_proxy: bool = typer.Option(
+        False,
+        "--trust-env-proxy",
+        help="Allow httpx to use HTTP_PROXY/HTTPS_PROXY from the environment. Disabled by default.",
+    ),
+) -> None:
+    """Run one model × prompt. Infrastructure errors make the command fail."""
+    if concurrency < 1:
+        console.print("[red]--concurrency 必须 >= 1[/red]")
+        raise typer.Exit(2)
+    prompt_path = PROMPT_DIR / f"{prompt}.txt"
+    if not prompt_path.exists():
+        console.print(f"[red]提示词不存在：{prompt_path}[/red]")
+        raise typer.Exit(2)
+
     tasks = load_tasks(TASK_DIR)
+    endpoint = get_base_url(base_url)
+    proxy_mode = "读取系统代理" if trust_env_proxy else "直连（忽略 HTTP_PROXY/HTTPS_PROXY）"
     console.print(f"加载 {len(tasks)} 条评测任务（demo_ 前缀已排除）")
-    tmpl = (PROMPT_DIR / f"{prompt}.txt").read_text(encoding="utf-8")
-    p = asyncio.run(run_model(model, prompt, tmpl, tasks, RAW_DIR, concurrency))
-    console.print(f"[green]原始输出已写入[/green] {p}")
+    console.print(f"Ollama endpoint: {endpoint}；网络模式：{proxy_mode}")
+    tmpl = prompt_path.read_text(encoding="utf-8")
+    try:
+        path = asyncio.run(
+            run_model(
+                model,
+                prompt,
+                tmpl,
+                tasks,
+                RAW_DIR,
+                concurrency,
+                base_url=base_url,
+                trust_env_proxy=trust_env_proxy,
+            )
+        )
+    except EndpointPreflightError as exc:
+        console.print(
+            f"[red]Ollama 预检失败：{exc.error_type}[/red]\n"
+            f"[red]{exc.message}[/red]"
+        )
+        if exc.error_type == "http_502":
+            console.print(
+                "[yellow]502 通常来自 HTTP 代理/反向代理，而不是 benchmark scorer。"
+                " 本工具默认已绕过系统 HTTP_PROXY/HTTPS_PROXY；"
+                "若仍是 502，请直接检查 Ollama 服务端或其前置代理。[/yellow]"
+            )
+        console.print("[yellow]未开始 122 条正式推理，也不会覆盖现有 raw。[/yellow]")
+        raise typer.Exit(1) from exc
+    except InferenceRunError as exc:
+        console.print(
+            f"[red]推理基础设施失败：{exc.failed}/{exc.total} 条。[/red] "
+            f"诊断数据已写入 {exc.out_path}；该文件不会被 scorer 当作模型错误。"
+        )
+        console.print(f"[red]错误类型：{exc.error_types}[/red]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]原始输出已写入[/green] {path}")
+
+
+@app.command("check-raw")
+def check_raw(
+    path: Path,
+    quiet: bool = False,
+    base_url: str | None = typer.Option(
+        None,
+        "--base-url",
+        help="When set, also require every raw row to have been produced by this endpoint.",
+    ),
+) -> None:
+    """Check exact task coverage, infrastructure status, and optional endpoint provenance."""
+    expected = {t.id for t in load_tasks(TASK_DIR)}
+    health = inspect_raw_file(path, expected, expected_base_url=base_url)
+    if not quiet or not health.complete:
+        console.print(
+            f"{path}: rows={health.rows}, ok={health.ok_rows}, infra={health.infra_errors}, "
+            f"malformed={health.malformed_rows}, duplicate={len(health.duplicate_ids)}, "
+            f"missing={len(health.missing_ids)}, unexpected={len(health.unexpected_ids)}"
+        )
+        if health.error_types:
+            console.print(f"  error_types={health.error_types}")
+    if not health.complete:
+        raise typer.Exit(1)
+
+
+
+@app.command()
+def doctor(
+    model: str = typer.Option(..., "--model", help="Model that must exist on the Ollama server."),
+    base_url: str | None = typer.Option(
+        None,
+        "--base-url",
+        help="OpenAI-compatible Ollama base URL; defaults to TCB_BASE_URL or localhost:11434.",
+    ),
+    trust_env_proxy: bool = typer.Option(
+        False,
+        "--trust-env-proxy",
+        help="Allow httpx to use HTTP_PROXY/HTTPS_PROXY from the environment.",
+    ),
+) -> None:
+    """Probe Ollama once without starting the benchmark."""
+    import httpx
+
+    endpoint = get_base_url(base_url)
+
+    async def _probe() -> tuple[str, ...]:
+        async with httpx.AsyncClient(trust_env=trust_env_proxy) as client:
+            return await preflight_endpoint(client, model, endpoint)
+
+    try:
+        models = asyncio.run(_probe())
+    except EndpointPreflightError as exc:
+        console.print(f"[red]FAIL {exc.error_type}[/red] {exc.message}", markup=False)
+        raise typer.Exit(1) from exc
+
+    console.print(
+        f"[green]OK[/green] {endpoint} 可访问，模型 [bold]{model}[/bold] 已找到；"
+        f"服务器共暴露 {len(models)} 个模型。"
+    )
 
 
 @app.command()
 def score() -> None:
-    """对 results/raw 下所有原始输出评分。"""
+    """Score all healthy raw outputs; never convert infra failures into model errors."""
     tasks = {t.id: t for t in load_tasks(TASK_DIR)}
     SCORE_DIR.mkdir(parents=True, exist_ok=True)
-    rows, skipped = [], 0
-    seen: dict[str, set[str]] = {}  # 组合 -> 该组合覆盖到的 task_id
-    for p in sorted(RAW_DIR.glob("raw__*.jsonl")):
-        seen[p.stem.replace("raw__", "")] = set()
-        with p.open(encoding="utf-8") as f:
-            for line in f:
+    rows: list[dict] = []
+    seen: dict[str, set[str]] = {}
+    integrity_errors: list[str] = []
+
+    raw_files = sorted(RAW_DIR.glob("raw__*.jsonl"))
+    if not raw_files:
+        console.print(f"[red]没有找到原始输出：{RAW_DIR}[/red]")
+        raise typer.Exit(1)
+
+    for path in raw_files:
+        combo = path.stem.replace("raw__", "")
+        health = inspect_raw_file(path, set(tasks))
+        if not health.complete:
+            integrity_errors.append(
+                f"{path.name}: infra={health.infra_errors}, malformed={health.malformed_rows}, "
+                f"duplicate={len(health.duplicate_ids)}, missing={len(health.missing_ids)}, "
+                f"unexpected={len(health.unexpected_ids)}"
+            )
+        seen[combo] = set()
+        with path.open(encoding="utf-8-sig") as f:
+            for lineno, line in enumerate(f, 1):
                 if not line.strip():
                     continue
-                d = json.loads(line)
-                if d["task_id"] not in tasks:  # 题目被删或改名时不要炸掉
-                    skipped += 1
+                try:
+                    data = json.loads(line)
+                except json.JSONDecodeError:
                     continue
-                seen[p.stem.replace("raw__", "")].add(d["task_id"])
-                s = score_one(
-                    tasks[d["task_id"]], d["model"], d["prompt"],
-                    d["output"], d.get("latency_s", 0.0),
-                )
-                rows.append(s.to_row())
-    out = SCORE_DIR / "scores.jsonl"
-    with out.open("w", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    console.print(f"[green]已评分 {len(rows)} 条[/green] -> {out}")
-    if skipped:
-        console.print(f"[yellow]跳过 {skipped} 条：原始输出里的 task_id 已不在数据集中[/yellow]")
+                if _infra_row(data):
+                    continue
+                task_id = data.get("task_id")
+                if task_id not in tasks:
+                    continue
+                if task_id in seen[combo]:
+                    continue
+                seen[combo].add(task_id)
+                try:
+                    score = score_one(
+                        tasks[task_id],
+                        data["model"],
+                        data["prompt"],
+                        data["output"],
+                        data.get("latency_s", 0.0),
+                    )
+                except (KeyError, TypeError, ValueError) as exc:
+                    integrity_errors.append(f"{path.name}:{lineno}: malformed score row ({exc})")
+                    continue
+                rows.append(score.to_row())
 
-    # 反向检查：数据集里有、但某个组合没跑到的题。
-    #
-    # 上面那个 skipped 管的是「raw 有、数据集没有」，加题时会遇到的是反方向：
-    # 新题没有任何 raw，评分时静默缺席，报表照样出，没有任何提示。
-    # run_matrix.ps1 的 Test-Path 跳过逻辑会加重这件事——文件已存在就跳过，
-    # 不管它是不是旧数据集跑出来的。
-    #
-    # 这和 D12 记的那个「静默成功的脚本比崩掉的脚本危险」是同一类问题：
-    # 你会以为矩阵是完整的，直到发现某道题在所有模型上都没有数据。
-    if seen:
-        expected = set(tasks)
-        incomplete = {k: expected - v for k, v in seen.items() if expected - v}
-        if incomplete:
-            missing_all = set.intersection(*incomplete.values()) if len(incomplete) == len(seen) else set()
-            console.print(
-                f"[yellow]警告：{len(incomplete)}/{len(seen)} 个组合没有覆盖全部 "
-                f"{len(expected)} 道题[/yellow]"
-            )
-            if missing_all:
-                console.print(
-                    f"[yellow]  以下 {len(missing_all)} 道题在所有组合里都没有数据，"
-                    f"排行榜不包含它们：[/yellow]\n  {', '.join(sorted(missing_all))}"
-                )
-                console.print(
-                    "[yellow]  数据集加过题？删掉 results/raw/ 下对应文件后重跑 "
-                    "scripts/run_matrix.ps1。[/yellow]"
-                )
+    out = SCORE_DIR / "scores.jsonl"
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8", newline="\n") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    tmp.replace(out)
+
+    console.print(f"[green]已评分 {len(rows)} 条健康输出[/green] -> {out}")
+    if integrity_errors:
+        console.print("[red]检测到原始结果完整性问题，评分结果仅包含健康记录：[/red]")
+        for msg in integrity_errors[:20]:
+            console.print(f"  [red]- {msg}[/red]")
+        if len(integrity_errors) > 20:
+            console.print(f"  [red]... 另有 {len(integrity_errors) - 20} 条[/red]")
+        console.print("[red]请重跑上述组合；本次 tcb score 返回非 0，避免生成误导性榜单。[/red]")
+        raise typer.Exit(1)
 
 
 @app.command()
 def inspect(model: str, prompt: str = "zero_shot", n: int = 5) -> None:
-    """人工核对：打印前 n 条的原始输出与归一化结果。第一次跑完必须做这件事。"""
+    """Print raw and normalized outputs for manual verification."""
     safe = model.replace(":", "_").replace("/", "_")
-    p = RAW_DIR / f"raw__{safe}__{prompt}.jsonl"
+    path = RAW_DIR / f"raw__{safe}__{prompt}.jsonl"
     tasks = {t.id: t for t in load_tasks(TASK_DIR)}
-    lines = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
-    for d in lines[:n]:
-        s = score_one(tasks[d["task_id"]], d["model"], d["prompt"], d["output"])
-        console.rule(f"{d['task_id']}  passed={s.passed}  score={s.checkpoint_score:.2f}")
+    lines = [json.loads(x) for x in path.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
+    for data in lines[:n]:
+        if _infra_row(data):
+            console.rule(f"{data.get('task_id', '?')}  INFRA_ERROR")
+            console.print(
+                f"{data.get('error_type', 'legacy_error')}: "
+                f"{data.get('error_message') or data.get('output', '')}",
+                markup=False,
+                highlight=False,
+            )
+            continue
+        score = score_one(tasks[data["task_id"]], data["model"], data["prompt"], data["output"])
+        console.rule(
+            f"{data['task_id']}  passed={score.passed}  score={score.checkpoint_score:.2f}"
+        )
         console.print("[dim]--- 原始输出 ---[/dim]")
-        # markup=False 必须加：模型输出里的 [Huawei] 会被 rich 当成样式标签吞掉，
-        # 屏幕上显示为空行，让你误以为模型没输出东西。
-        console.print(d["output"][:600], markup=False, highlight=False)
+        console.print(data["output"][:600], markup=False, highlight=False)
         console.print("[dim]--- 归一化后 ---[/dim]")
-        console.print(s.normalized or "(空)", markup=False, highlight=False)
-        console.print(f"[dim]命中[/dim] {s.hit}  [dim]未命中[/dim] {s.miss}  [dim]标签[/dim] {s.tags}")
+        console.print(score.normalized or "(空)", markup=False, highlight=False)
+        console.print(
+            f"[dim]命中[/dim] {score.hit}  [dim]未命中[/dim] {score.miss}  "
+            f"[dim]标签[/dim] {score.tags}"
+        )
 
 
 @app.command()
 def report() -> None:
-    """出 Leaderboard 与图表（Day 8 实现 report.py 后可用）。"""
+    """Build leaderboard and charts from healthy scores."""
     from .report import build_leaderboard, plot_all
 
-    md = build_leaderboard(SCORE_DIR / "scores.jsonl")
-    Path("results/leaderboard.md").write_text(md, encoding="utf-8")
-    plot_all(SCORE_DIR / "scores.jsonl", Path("docs/images"))
+    score_path = SCORE_DIR / "scores.jsonl"
+    md = build_leaderboard(score_path)
+    leaderboard = PROJECT_ROOT / "results" / "leaderboard.md"
+    leaderboard.write_text(md, encoding="utf-8")
+    plot_all(score_path, IMAGE_DIR)
     console.print(md)
 
 

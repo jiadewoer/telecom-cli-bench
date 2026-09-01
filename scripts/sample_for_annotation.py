@@ -46,7 +46,8 @@ import random
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from telecom_cli_bench.normalize import extract_commands  # noqa: E402
 from telecom_cli_bench.schema import load_tasks  # noqa: E402
@@ -91,22 +92,30 @@ def stratified_sample(rows: list[dict], n: int) -> list[dict]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--n", type=int, default=60)
-    ap.add_argument("--scores", type=Path, default=Path("results/scored/scores.jsonl"))
-    ap.add_argument("--raw", type=Path, default=Path("results/raw"))
-    ap.add_argument("--out", type=Path, default=Path("results/annotation_sample.csv"))
+    ap.add_argument(
+        "--scores",
+        type=Path,
+        default=REPO_ROOT / "results" / "scored" / "scores.jsonl",
+    )
+    ap.add_argument("--raw", type=Path, default=REPO_ROOT / "results" / "raw")
+    ap.add_argument("--out", type=Path, default=REPO_ROOT / "results" / "annotation_sample.csv")
     args = ap.parse_args()
 
     if not args.scores.exists():
         sys.exit(f"[FAIL] 找不到 {args.scores}，先跑 tcb score")
 
-    rows = [json.loads(x) for x in args.scores.read_text(encoding="utf-8").splitlines() if x.strip()]
+    rows = [
+        json.loads(x)
+        for x in args.scores.read_text(encoding="utf-8").splitlines()
+        if x.strip()
+    ]
     fails = [r for r in rows if not r["passed"] and EXCLUDE_TAG not in (r["tags"] or "")]
     print(f"总样本 {len(rows)}  失败 {sum(1 for r in rows if not r['passed'])}  "
           f"剔除 {EXCLUDE_TAG} 后 {len(fails)}")
 
     picked = stratified_sample(fails, args.n)
     raw = load_raw_outputs(args.raw)
-    tasks = {t.id: t for t in load_tasks(Path("data/tasks"))}
+    tasks = {t.id: t for t in load_tasks(REPO_ROOT / "data" / "tasks")}
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8-sig", newline="") as fh:

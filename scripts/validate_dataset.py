@@ -14,7 +14,7 @@ from pathlib import Path
 from telecom_cli_bench.normalize import normalize_block
 from telecom_cli_bench.schema import load_tasks
 
-TASK_DIR = Path("data/tasks")
+TASK_DIR = Path(__file__).resolve().parents[1] / "data" / "tasks"
 
 
 def main() -> int:

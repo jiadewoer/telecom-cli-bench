@@ -10,7 +10,8 @@
 用法：
     copy results\\raw\\raw__qwen2.5_7b__zero_shot.jsonl results\\raw\\_run1.jsonl
     tcb run qwen2.5:7b --prompt zero_shot
-    python scripts/compare_runs.py results/raw/_run1.jsonl results/raw/raw__qwen2.5_7b__zero_shot.jsonl
+    python scripts/compare_runs.py \
+        results/raw/_run1.jsonl results/raw/raw__qwen2.5_7b__zero_shot.jsonl
 
 输出里最重要的是最后一行：分数发生变化的条数。
 原始输出有细微差别但分数不变，对排名没有影响；
@@ -23,7 +24,8 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from telecom_cli_bench.schema import load_tasks  # noqa: E402
 from telecom_cli_bench.scorer import score_one  # noqa: E402
@@ -54,7 +56,7 @@ def main() -> None:
     if only_a or only_b:
         print(f"[WARN] 仅出现在一侧的任务: A {len(only_a)} 条 / B {len(only_b)} 条，已跳过")
 
-    tasks = {t.id: t for t in load_tasks(Path("data/tasks"))}
+    tasks = {t.id: t for t in load_tasks(REPO_ROOT / "data" / "tasks")}
 
     text_diff, score_diff, pass_flip = [], [], []
     for tid in common:

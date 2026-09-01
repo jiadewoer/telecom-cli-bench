@@ -16,7 +16,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4", "mypy>=1.10"]
+dev = [
+    "mypy>=1.10",
+    "pandas-stubs>=2.2",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+    "types-tqdm>=4.66",
+]
 
 [project.scripts]
 tcb = "telecom_cli_bench.cli:app"
@@ -34,3 +41,4 @@ select = ["E", "F", "I", "UP", "B"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

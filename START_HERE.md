@@ -1,7 +1,7 @@
 # 从这里开始
 
-这个骨架是「竖切」版本：**4 条题 + 完整管线**，不是手册里的「30 条题再建管线」。
-目的是让你在动手写第 5 条题之前，就已经亲眼看过一条题从写下来到出分的全过程。
+当前仓库已经从最初的「4 条题竖切骨架」演进为 **122 条正式任务 + 4 条 few-shot demo + 完整管线**。
+这份文档保留“先跑通一条完整链路再扩题”的使用顺序，但命令和完整性规则以当前实现为准。
 
 ---
 
@@ -26,12 +26,12 @@ PS> pytest -v
 PS> ollama list
 PS> ollama pull qwen2.5:7b     # 如果还没有
 
-# 6. 跑通第一个组合（只有 4 条题，一分钟内出结果）
+# 6. 跑通第一个组合（当前为 122 条正式任务）
 PS> tcb run qwen2.5:7b --prompt zero_shot
 PS> tcb score
 
 # 7. ⭐ 最重要的一步：人工核对
-PS> tcb inspect qwen2.5:7b
+PS> tcb inspect qwen2.5:7b --prompt zero_shot --n 5
 ```
 
 第 7 步会把原始输出和归一化结果并排打印出来。**逐条看这三件事：**
@@ -111,12 +111,6 @@ PS> python -c "from telecom_cli_bench.schema import load_tasks; from pathlib imp
 
 ---
 
-## 还没写的部分（按手册进度补）
+## 当前已经完成
 
-- `src/telecom_cli_bench/report.py` —— Day 8 出图与 Leaderboard，`tcb report` 已经预留了调用
-- `scripts/run_matrix.ps1` —— Day 6 批量跑
-- `configs/models.json` —— Day 6
-- `.github/workflows/ci.yml` —— Day 9
-- `README.md` —— Day 9
-
-不用提前写。**现在唯一该做的事是写题。**
+`report.py`、全矩阵脚本、模型配置、CI 与 README 都已经落地。当前最重要的工程护栏是：raw 必须精确覆盖当前任务集且不能含基础设施错误；`run_matrix.ps1` 会通过 `tcb check-raw` 验证已有结果，失败就重跑，`tcb score` 也会再次兜底。

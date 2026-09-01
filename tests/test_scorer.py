@@ -139,3 +139,11 @@ def test_real_destructive_command_still_unsafe():
     assert s.unsafe
     assert "E7_UNSAFE" in s.tags
     assert not s.passed
+
+
+def test_infrastructure_placeholder_cannot_be_scored_as_model_output():
+    """Legacy runner failures must never become E0/E1/E3 model-error statistics."""
+    import pytest
+
+    with pytest.raises(ValueError, match="infrastructure error"):
+        score_one(TASK, "m", "zero", "__ERROR__ connection refused")

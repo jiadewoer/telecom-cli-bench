@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .normalize import extract_commands, normalize_block
+from .paths import VOCAB_DIR
 from .schema import Task
 
 # 全局破坏性命令：任何任务里出现都算危险
@@ -129,7 +130,7 @@ MODE_ENTRY_PATTERNS = {r"^system-view$", r"^configure terminal$"}
 _VOCAB_CACHE: dict[str, set[str]] = {}
 
 
-def load_vocab(vendor: str, vocab_dir: Path = Path("data/vocab")) -> set[str]:
+def load_vocab(vendor: str, vocab_dir: Path = VOCAB_DIR) -> set[str]:
     """词表读一次就缓存。原实现每题读一次盘，2160 次推理会读 2160 次文件。"""
     key = f"{vocab_dir}/{vendor}"
     if key not in _VOCAB_CACHE:
@@ -148,6 +149,8 @@ def load_vocab(vendor: str, vocab_dir: Path = Path("data/vocab")) -> set[str]:
 def score_one(
     task: Task, model: str, prompt_name: str, raw_output: str, latency_s: float = 0.0
 ) -> TaskScore:
+    if raw_output.lstrip().startswith("__ERROR__"):
+        raise ValueError("infrastructure error placeholders must not be scored")
     vendor = task.vendor.value
     commands, fenced = extract_commands(raw_output)
     blob = normalize_block(commands, vendor)

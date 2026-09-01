@@ -14,7 +14,10 @@ def test_interface_forms_converge():
 
 
 def test_device_prompt_is_stripped():
-    assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
+    assert (
+        normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei")
+        == "undo shutdown"
+    )
     assert normalize_line("<Huawei> save", "huawei") == "save"
     assert normalize_line("Switch(config)# no shutdown", "cisco") == "no shutdown"
     assert normalize_line("Switch(config-if)#switchport mode access", "cisco") == (
@@ -104,7 +107,10 @@ def test_whole_line_brackets_are_unwrapped_not_dropped():
     assert normalize_line("[quit]", "huawei") == "quit"
     assert normalize_line("[port default vlan 100]", "huawei") == "port default vlan 100"
     # 带命令的提示符仍按提示符处理
-    assert normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei") == "undo shutdown"
+    assert (
+        normalize_line("[Huawei-GigabitEthernet0/0/1] undo shutdown", "huawei")
+        == "undo shutdown"
+    )
 
 
 def test_huawei_sh_is_not_expanded_to_display():

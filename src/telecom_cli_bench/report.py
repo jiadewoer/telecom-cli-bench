@@ -47,7 +47,7 @@ def build_leaderboard(path: Path, prompt: str = "zero_shot") -> str:
     if "mode_only_fail" not in d.columns:  # 兼容旧的 scores.jsonl
         d["mode_only_fail"] = False
     d["passed_lenient"] = d["passed"] | d["mode_only_fail"].fillna(False).astype(bool)
-    # 空输出率必须上主榜。首轮全矩阵里 deepseek-r1:8b 有 29.7% 的样本正文为空
+    # 空输出率必须上主榜。部分 deepseek-r1:8b 样本正文为空
     # （思维链吃光了 max_tokens），这些 0 分会被读成「答错了」，其实是「没答完」。
     # 把它单列出来，读者才知道该不该把这个模型的分数当回事。
     d["empty_out"] = d["tags"].fillna("").str.contains("E8_EMPTY")
@@ -126,45 +126,48 @@ def plot_error_composition(df: pd.DataFrame, out: Path, prompt: str = "zero_shot
     m = pd.DataFrame(rows).T[TAG_ORDER]
     m.columns = [TAG_CN[c] for c in m.columns]
 
-    ax = m.plot(kind="bar", stacked=True, figsize=(10, 5.5), colormap="tab20")
+    fig, ax = plt.subplots(figsize=(10, 5.5))
+    m.plot(kind="bar", stacked=True, colormap="tab20", ax=ax)
     ax.set_ylabel("占全部任务的比例 (%)")
     ax.set_title("错误构成：模型都错在哪里（同一任务可命中多个标签，故总和可超 100%）", fontsize=12)
     ax.set_xticklabels(m.index, rotation=18, ha="right", fontsize=9)
     ax.legend(fontsize=8, ncol=3)
     ax.grid(alpha=0.25, axis="y")
-    ax.figure.tight_layout()
-    ax.figure.savefig(out, dpi=150)
-    plt.close(ax.figure)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
 
 
 def plot_prompt_ablation(df: pd.DataFrame, out: Path) -> None:
     """图三（差异化）：提示词能补多少领域知识。"""
     piv = df.pivot_table(index="model", columns="prompt", values="passed", aggfunc="mean") * 100
     order = [c for c in ["zero_shot", "few_shot", "syntax_hint"] if c in piv.columns]
-    ax = piv[order].plot(kind="bar", figsize=(10, 5), width=0.75)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    piv[order].plot(kind="bar", width=0.75, ax=ax)
     ax.set_ylabel("任务通过率 (%)")
     ax.set_title("提示词消融：领域知识能靠提示词补上吗？", fontsize=13)
     ax.set_xticklabels(piv.index, rotation=18, ha="right", fontsize=9)
     ax.grid(alpha=0.25, axis="y")
     ax.legend(title="提示词")
-    ax.figure.tight_layout()
-    ax.figure.savefig(out, dpi=150)
-    plt.close(ax.figure)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
 
 
 def plot_vendor_gap(df: pd.DataFrame, out: Path, prompt: str = "zero_shot") -> None:
     """图四（可选）：华为 vs 思科的通过率差，反映训练语料的分布偏差。"""
     d = df[df.prompt == prompt]
     piv = d.pivot_table(index="model", columns="vendor", values="passed", aggfunc="mean") * 100
-    ax = piv.plot(kind="bar", figsize=(9, 4.5), width=0.7, color=["#DD8452", "#55A868"])
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    piv.plot(kind="bar", width=0.7, color=["#DD8452", "#55A868"], ax=ax)
     ax.set_ylabel("任务通过率 (%)")
     ax.set_title("厂商差异：同一模型在华为题与思科题上的表现", fontsize=13)
     ax.set_xticklabels(piv.index, rotation=18, ha="right", fontsize=9)
     ax.grid(alpha=0.25, axis="y")
     ax.legend(title="厂商")
-    ax.figure.tight_layout()
-    ax.figure.savefig(out, dpi=150)
-    plt.close(ax.figure)
+    fig.tight_layout()
+    fig.savefig(out, dpi=150)
+    plt.close(fig)
 
 
 def plot_all(scores: Path, img_dir: Path) -> None:
